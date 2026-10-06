@@ -30,8 +30,12 @@ task:
   arm_mode: single
   image_keys: [base_0_rgb, left_wrist_0_rgb, right_wrist_0_rgb]
   # Must match WidowXRobot.observations()'s keys, in the order they get concatenated into the
-  # flat 7D state WidowXInputs expects: 6 arm joints (rad) + 1 gripper (m).
-  proprio_keys: [joint_positions, gripper_position]
+  # flat 14D state WidowXInputs expects: 6 joint positions (rad) + 1 gripper position (m), THEN
+  # 6 joint external efforts (Nm) + 1 gripper effort (N) — same order as the dataset's
+  # observation.state column (7 .pos then 7 .ext_eff). Corrected 2026-10-06: this was 7D
+  # (positions only) before, which did not match the real dataset/checkpoint schema — see
+  # docs/widowx-setup.md.
+  proprio_keys: [joint_positions, gripper_position, joint_efforts, gripper_effort]
   action_horizon: 3
   completion_reward: 10.0
   time_reward: -0.01
@@ -54,6 +58,10 @@ robot:
     end_effector: wxai_v0_follower # trossen_arm.StandardEndEffector enum name
     reset_time_sec: 5.0
     goal_time_per_step: 0.05
+    # Smooths the transition between two independently-inferred action chunks (PCHIP ramp) —
+    # ported 2026-10-06 from openpi's examples/trossen_ai/main.py (blend_pi05_inference, commit
+    # a403486 "fix: Jerks between inferences"). 0 disables it; unvalidated on this specific arm yet.
+    blend_duration: 0.5
     # Safety clipping (see robotics/robots/widowx.py:_safe_target) — same placeholders already
     # flagged as unvalidated in the Caminho-A YAML (integrations/openpi/inference/configs/widowx.yaml).
     max_relative_step:
@@ -73,7 +81,10 @@ gripper:
 # base_action_to_tcp_action, so the old KeyboardIntervention blocker doesn't apply here.
 teleoperation:
   kind: widowx_leader
-  device: "CHANGE_ME_LEADER_ARM_IP" # leader arm's own trossen_arm IP, separate from robot.server_url
+  device: "192.168.1.23" # leader arm's own trossen_arm IP, separate from robot.server_url —
+  # ported from lerobot_trossen/collect_dataset.sh's --teleop.ip_address. Same script's
+  # --robot.ip_address=192.168.1.2 also matches what's already in this project's configs,
+  # a good cross-check that these IPs are the real ones.
   completion_double_press_interval: 0.5
   options:
     trigger_key: "t" # toggles human/policy control; press again to release
@@ -84,15 +95,16 @@ teleoperation:
 
 # Server: Offline dataset mapping and preprocessing for Replay and Context buffers.
 data:
-  # ⚠️ UNCONFIRMED. This is the dataset for the "organize_with_generic_objects" checkpoint
-  # specifically (not the "organize-table-cube" dataset from widowx-integration.md, which is a
-  # different task/checkpoint family). The only lead so far is the checkpoint's own norm_stats
-  # asset_id, `jv-costa/pi05_widowxai_organize_table-generic-0-30ep-21v` — which may or may not
-  # be the literal HF Hub dataset repo_id. Confirm this before running `preprocess` for real;
-  # preprocessing against the wrong dataset fails or, worse, silently trains on mismatched data.
+  # ⚠️ Still not 100% confirmed as the literal HF Hub repo_id, but more plausible now
+  # (2026-10-06): openpi/docs/full_finetune_h100_slurm.md independently describes this exact id as
+  # having "schema idêntico" to Guilhermefrazao/widowxai-organize-the-table-effort-v21 (32 episodes
+  # vs. the latter's 50) — the same author's naming convention, used for the same checkpoint
+  # family. Confirm before running `preprocess` for real regardless.
   lerobot_repo_id: jv-costa/pi05_widowxai_organize_table-generic-0-30ep-21v
   state_key: observation.state
-  state_indices: [0, 1, 2, 3, 4, 5, 6]
+  # 14D: 7 joint positions (indices 0-6) then 7 external efforts (indices 7-13) — corrected
+  # 2026-10-06, was 7D (positions only) before, which did not match the real dataset schema.
+  state_indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
   action_key: action
   action_indices: [0, 1, 2, 3, 4, 5, 6]
   extra_delta_transform: false

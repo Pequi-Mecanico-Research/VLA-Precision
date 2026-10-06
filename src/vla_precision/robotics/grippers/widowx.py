@@ -75,8 +75,16 @@ class WidowXGripper:
         self._driver.set_gripper_position(position, goal_time=self._goal_time, blocking=False)
 
     def observations(self, robot_state: dict) -> dict[str, np.ndarray]:
-        del robot_state
-        return {"gripper_position": np.asarray([self._driver.get_gripper_position()], dtype=np.float32)}
+        gripper_position = np.asarray([self._driver.get_gripper_position()], dtype=np.float32)
+        joint_efforts = robot_state.get("joint_efforts")
+        if joint_efforts is not None:
+            # Reuses the effort vector WidowXRobot already fetched this step instead of a second
+            # driver round-trip — index 6 is the gripper's own slot, same joint ordering as
+            # get_all_positions()/get_all_external_efforts().
+            gripper_effort = np.asarray([joint_efforts[6]], dtype=np.float32)
+        else:
+            gripper_effort = np.asarray([self._driver.get_gripper_external_effort()], dtype=np.float32)
+        return {"gripper_position": gripper_position, "gripper_effort": gripper_effort}
 
     def close(self) -> None:
         # WidowXRobot.close() owns and releases the shared driver.

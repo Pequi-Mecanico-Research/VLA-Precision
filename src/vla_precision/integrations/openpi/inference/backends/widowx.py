@@ -34,7 +34,13 @@ from vla_precision.integrations.openpi.checkpoints import (
 from .recording import Recorder
 from .utils import FpsCounter
 
-NUM_JOINTS = 7  # joint_0..joint_5 (rad) + gripper (m)
+NUM_JOINTS = 7  # joint_0..joint_5 (rad) + gripper (m) — action space, and the position half of state.
+# observation/state is 14D: the 7 joint positions above, THEN the 7 external efforts in the same
+# order (Nm for arm joints, N for the gripper) — confirmed from the real dataset schema
+# (docs/widowx-integration.md §6, docs/widowx-setup.md) and the training config that produced the
+# checkpoints. WidowXInputs forwards this column verbatim with no slicing, so the live observation
+# built here must match this shape and order exactly.
+STATE_DIM = 2 * NUM_JOINTS
 
 
 def _resolve_model_path(value) -> Path | None:
@@ -45,7 +51,7 @@ def _resolve_model_path(value) -> Path | None:
 
 
 def _validate_widowx_norm_stats(norm_stats, *, path: Path | None = None) -> None:
-    """WidowX AI state/action are always 7D (no fixed-gripper variant, unlike UR/Franka)."""
+    """WidowX AI action is 7D; state is 14D (7 positions + 7 external efforts) — see STATE_DIM."""
 
     def _dim(keys: tuple[str, ...]) -> int | None:
         if norm_stats is None:
@@ -61,9 +67,9 @@ def _validate_widowx_norm_stats(norm_stats, *, path: Path | None = None) -> None
 
     state_dim = _dim(("state", "observation/state"))
     action_dim = _dim(("actions", "action"))
-    if state_dim != NUM_JOINTS or action_dim != NUM_JOINTS:
+    if state_dim != STATE_DIM or action_dim != NUM_JOINTS:
         raise ValueError(
-            f"WidowX AI inference requires {NUM_JOINTS}-D state and {NUM_JOINTS}-D action norm "
+            f"WidowX AI inference requires {STATE_DIM}-D state and {NUM_JOINTS}-D action norm "
             f"stats, got state={state_dim}, action={action_dim} in {path}."
         )
 
@@ -266,7 +272,9 @@ class Inference:
     # --------------------------- OBS --------------------------- #
     def get_obs_state(self) -> Dict[str, Any]:
         """Return the current observation in WidowXInputs format."""
-        state = np.asarray(self.driver.get_all_positions(), dtype=np.float32)
+        positions = np.asarray(self.driver.get_all_positions(), dtype=np.float32)
+        efforts = np.asarray(self.driver.get_all_external_efforts(), dtype=np.float32)
+        state = np.concatenate([positions, efforts])  # 14D: 7 positions then 7 efforts, see STATE_DIM
         obs = {
             "observation/state": state,
             "observation/image": image_tools.convert_to_uint8(

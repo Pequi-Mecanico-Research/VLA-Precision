@@ -9,7 +9,10 @@ from openpi.models import model as _model
 def make_widowx_example() -> dict:
     """Creates a random input example for the WidowX AI policy."""
     return {
-        "observation/state": np.random.rand(7),
+        # 14D: 7 joint positions then 7 external efforts — see WidowXRobot.observations() and
+        # docs/widowx-setup.md. The upstream openpi fork's own version of this helper uses a
+        # misleading 7D example; don't copy that mistake here.
+        "observation/state": np.random.rand(14),
         "observation/image": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
         "observation/wrist_image": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
         "observation/low_image": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),

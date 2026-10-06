@@ -17,6 +17,7 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
+from scipy.interpolate import PchipInterpolator
 
 from vla_precision.config.schema import RobotConfig
 from vla_precision.robotics.grippers.base import Gripper
@@ -77,6 +78,12 @@ class WidowXRobot:
         gripper_step = float(max_relative_step.get("gripper", 0.02))
         self.max_relative_step = np.array([arm_step] * 6 + [gripper_step], dtype=float)
 
+        # Smooths the transition between two independently-inferred action chunks — ported from
+        # openpi's examples/trossen_ai/main.py (`blend_pi05_inference`, commit a403486 "fix: Jerks
+        # between inferences"). Set to 0 to disable and rely on max_relative_step alone.
+        self.blend_duration = float(config.options.get("blend_duration", 0.5))
+        self._has_executed_chunk = False
+
         self._state = np.asarray(self.driver.get_all_positions(), dtype=np.float64)
 
     @property
@@ -92,8 +99,18 @@ class WidowXRobot:
 
     def observations(self) -> dict[str, Any]:
         self.refresh_state()
-        state: dict[str, Any] = {"joint_positions": self._state[:6].copy()}
-        state.update(self.gripper.observations({"joint_positions": self._state}))
+        # The dataset's `observation.state` column is 14D (7 positions + 7 external efforts, in
+        # the same joint order) — confirmed from the real dataset schema
+        # (docs/widowx-integration.md §6) and from the training config that produced the
+        # checkpoints (openpi fork's docs/full_finetune_h100_slurm.md). WidowXInputs forwards
+        # `observation/state` verbatim with no slicing, so the live observation must match this
+        # 14D shape exactly, in the same order, or inference silently receives a malformed input.
+        efforts = np.asarray(self.driver.get_all_external_efforts(), dtype=np.float64)
+        state: dict[str, Any] = {
+            "joint_positions": self._state[:6].copy(),
+            "joint_efforts": efforts[:6].copy(),
+        }
+        state.update(self.gripper.observations({"joint_positions": self._state, "joint_efforts": efforts}))
         return state
 
     def _clip_to_joint_limits(self, positions: np.ndarray) -> np.ndarray:
@@ -108,12 +125,47 @@ class WidowXRobot:
         delta = np.clip(target - self._state, -self.max_relative_step, self.max_relative_step)
         return self._state + delta
 
+    def _blend_to_target(self, target: np.ndarray) -> None:
+        """Smoothly ramp from the current position to `target` over `self.blend_duration`, via
+        PCHIP interpolation, instead of snapping directly onto the first row of a newly-inferred
+        chunk. Avoids the jerk of concatenating two independently-inferred chunks back to back —
+        ported from openpi's `blend_pi05_inference` (examples/trossen_ai/main.py). Each
+        interpolated waypoint still goes through `_safe_target`, so this never bypasses joint
+        limits or the per-tick relative-motion cap; it only changes the shape of the trajectory
+        the policy's clipped targets are threaded through.
+        """
+        if self.blend_duration <= 0:
+            return
+        start = self._state.copy()
+        interpolator = PchipInterpolator([0.0, self.blend_duration], np.array([start, target]), axis=0)
+        blend_start = self._clock()
+        while True:
+            elapsed = self._clock() - blend_start
+            if elapsed >= self.blend_duration:
+                break
+            tick_start = self._clock()
+            waypoint = self._safe_target(interpolator(elapsed))
+            arm_target = list(waypoint[:6]) + [float(self._state[6])]
+            self.driver.set_all_positions(arm_target, goal_time=self.goal_time_per_step, blocking=False)
+            if self.gripper.action_dimension:
+                self.gripper.command_chunk(waypoint[6:7])
+            self._state = waypoint
+            to_sleep = 1.0 / self.control_hz - (self._clock() - tick_start)
+            if to_sleep > 0:
+                self._sleep(to_sleep)
+
     def execute_action_chunk(self, action: np.ndarray) -> np.ndarray:
         chunk = np.asarray(action, dtype=np.float64)
         if chunk.ndim == 1:
             chunk = chunk[None]
         if chunk.ndim != 2 or chunk.shape[-1] != self.action_dimension:
             raise ValueError(f"WidowX action must have shape (T, {self.action_dimension}), got {chunk.shape}")
+
+        # Blend into this new chunk's first target — but not on the very first chunk of an
+        # episode, where reset() has already smoothly settled the arm at reset_positions.
+        if self._has_executed_chunk:
+            self._blend_to_target(self._safe_target(chunk[0, :NUM_JOINTS]))
+        self._has_executed_chunk = True
 
         executed = []
         for row in chunk:
@@ -154,6 +206,7 @@ class WidowXRobot:
         target = self._clip_to_joint_limits(self._sample_reset_target())
         self.driver.set_all_positions(list(target), goal_time=self.reset_time_sec, blocking=True)
         self._state = np.asarray(self.driver.get_all_positions(), dtype=np.float64)
+        self._has_executed_chunk = False
         return self.observations()
 
     def request(self, name: str, enabled: bool) -> Any:
