@@ -7,7 +7,11 @@ policy:
   # `openpi-inference serve-policy` with this same file. Fill in `host` below with that machine's
   # real IP/hostname before running `openpi-inference run` here.
   location: server # local or server
-  host: "CHANGE_ME_4090_HOST" # 4090 machine address, used by this client
+  # Ported from openpi/client_inference.sh (--policy_host). ⚠️ This exact IP failed with
+  # "OSError: No route to host" when the user tested the openpi reference client against it — a
+  # pure network/routing issue (see docs/widowx-setup.md), unconfirmed whether this is really the
+  # 4090's reachable address yet. Confirm connectivity (`ping`) before trusting this value.
+  host: "192.168.0.62"
   bind_host: 0.0.0.0 # only read on the 4090 side, when running serve-policy
   port: 8000
   cuda_visible_devices: "0" # only read on the 4090 side, when running serve-policy
@@ -28,7 +32,7 @@ record:
 
 robot:
   kind: widowx
-  ip: "192.168.1.2" # WidowX AI follower IP address
+  ip: "192.168.1.2" # WidowX AI follower IP — ported from openpi/examples/trossen_ai/main.py
   model: wxai_v0 # trossen_arm.Model enum name
   end_effector: wxai_v0_follower # trossen_arm.StandardEndEffector enum name
   # Safe "ready" pose to reset to between episodes: joint_0..joint_5 (rad) + gripper (m, open).
@@ -46,6 +50,7 @@ robot:
   debug: False
 
 cameras:
+  # Ported from openpi/examples/trossen_ai/main.py
   cam_high_serial: "944122073060"
   cam_wrist_serial: "243322072096"
   cam_low_serial: "102122061119"
@@ -55,9 +60,21 @@ cameras:
 
 model:
   # OpenPI extension TrainConfig (registered in integrations/openpi/configs.py).
+  # 2026-10-06: the user confirmed the dense/full fine-tune is what will actually be used (not the
+  # LoRA checkpoint this file pointed at before) — "pi05_full_finetune_widowx" (Pi0Config(pi05=True),
+  # no LoRA) is the CORRECT config for that, matching the real "_full" training config found in
+  # openpi's feat/inference-tuning branch (docs/full_finetune_h100_slurm.md). The earlier edit here
+  # (briefly pointing this at "pi05_acob_widowx" to match the LoRA checkpoint) no longer applies —
+  # kept as a documented lesson in docs/widowx-setup.md §5, not because the mechanism was wrong,
+  # just because the checkpoint being used changed. Whichever checkpoint ends up in
+  # `checkpoint_dir` below, always sanity-check it was trained LoRA or dense and that this matches.
   name: "pi05_full_finetune_widowx"
   # WidowX AI checkpoint used for native inference.
-  checkpoint_dir: "../../../../../checkpoints/pi05_organize_with_generic_objects-finetune-30ep-20k"
+  # ⚠️ PENDING: must point to the actual dense/full checkpoint, not the LoRA one that was here
+  # before (which is also no longer downloaded locally). Likely https://huggingface.co/gpettro/pi05-widowx-organize-table-full
+  # (still unconfirmed — 401 on the Hub, needs `hf auth login`) or wherever the user's own
+  # full-finetune run (docs/full_finetune_h100_slurm.md) actually wrote its checkpoint.
+  checkpoint_dir: "CHANGE_ME_DENSE_CHECKPOINT_PATH"
   checkpoint_step: null # null selects the checkpoint at checkpoint_dir directly (no numeric step subfolder)
   infer_fps: 8
   sample_steps: 10
