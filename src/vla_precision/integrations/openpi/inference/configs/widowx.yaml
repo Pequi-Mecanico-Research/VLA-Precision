@@ -1,0 +1,63 @@
+experiment:
+  name: widowx_organize_table
+output_root: ./results
+
+policy:
+  # server: this client machine (braço/câmeras) connects out to the 4090 machine, which runs
+  # `openpi-inference serve-policy` with this same file. Fill in `host` below with that machine's
+  # real IP/hostname before running `openpi-inference run` here.
+  location: server # local or server
+  host: "CHANGE_ME_4090_HOST" # 4090 machine address, used by this client
+  bind_host: 0.0.0.0 # only read on the 4090 side, when running serve-policy
+  port: 8000
+  cuda_visible_devices: "0" # only read on the 4090 side, when running serve-policy
+
+task:
+  description: "Organize the table"
+
+video:
+  fps: 15 # camera fps for recording
+  visualize: True # whether to visualize the images during execution
+
+record:
+  num_episodes: 20 # number of inference episodes to run
+  episode_timeout_sec: 60 # max seconds per episode before auto reset
+  show_action_fps: False # whether to print action loop FPS
+  show_inference_fps: False # whether to print inference loop FPS
+  show_time: True # whether to print elapsed episode time every second
+
+robot:
+  kind: widowx
+  ip: "192.168.1.2" # WidowX AI follower IP address
+  model: wxai_v0 # trossen_arm.Model enum name
+  end_effector: wxai_v0_follower # trossen_arm.StandardEndEffector enum name
+  # Safe "ready" pose to reset to between episodes: joint_0..joint_5 (rad) + gripper (m, open).
+  reset_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04]
+  reset_time_sec: 5.0 # smooth move duration to reset_positions
+  action_fps: 30 # control loop frequency
+  action_horizon: 3
+  direct_action_horizon: False # True: model predicts action_horizon steps; False: predict default horizon and execute first action_horizon
+  goal_time_per_step: 0.05 # goal_time passed to set_all_positions per action tick (smoothing)
+  # Safety clipping: max |Δposition| allowed per control tick (never trust a
+  # freshly-loaded/untrained checkpoint's raw output beyond this).
+  max_relative_step:
+    arm: 0.15 # rad, per arm joint
+    gripper: 0.02 # m
+  debug: False
+
+cameras:
+  cam_high_serial: "944122073060"
+  cam_wrist_serial: "243322072096"
+  cam_low_serial: "102122061119"
+  fps: 30
+  width: 640
+  height: 480
+
+model:
+  # OpenPI extension TrainConfig (registered in integrations/openpi/configs.py).
+  name: "pi05_full_finetune_widowx"
+  # WidowX AI checkpoint used for native inference.
+  checkpoint_dir: "../../../../../checkpoints/pi05_organize_with_generic_objects-finetune-30ep-20k"
+  checkpoint_step: null # null selects the checkpoint at checkpoint_dir directly (no numeric step subfolder)
+  infer_fps: 8
+  sample_steps: 10

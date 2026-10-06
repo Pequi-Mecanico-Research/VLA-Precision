@@ -50,7 +50,7 @@ def load_native_inference_config(path: str | Path) -> NativeInferenceConfig:
         raise ValueError("policy.location must be 'local' or 'server'")
 
     backend = str(robot.get("kind", "ur"))
-    supported = {"ur", "dual_ur", "franka"}
+    supported = {"ur", "dual_ur", "franka", "widowx"}
     if backend not in supported:
         raise ValueError(f"robot.kind must be one of {sorted(supported)}, got {backend!r}")
     experiment_name = str(experiment.get("name", "")).strip()

@@ -3221,6 +3221,19 @@ wheels = [
 ]
 
 [[package]]
+name = "trossen-arm"
+version = "1.9.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e2/9c/98f468017f9abc2fdd1da5767fe9fff3018b4fa6d88b03e7ad2aa856f34c/trossen_arm-1.9.3-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:0ae20b9bd8233019009f4c56088695d8a2ef934ce5690796ec1e7dfca4aae844", size = 833707, upload-time = "2026-04-28T21:01:57.063Z" },
+    { url = "https://files.pythonhosted.org/packages/96/6d/217e7e533ce734050e31c4438d52b7185efce486a6790bc62210e9c64afa/trossen_arm-1.9.3-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:209db118637120f64bbad71c53050e7578adb734360f5fa9e55474ddfb07cd39", size = 1166696, upload-time = "2026-04-28T21:01:59.011Z" },
+    { url = "https://files.pythonhosted.org/packages/35/32/1b7b5cd518db33ea3af090e16ae0a9e072656d8a43f1491a2f8fd9609d7f/trossen_arm-1.9.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b73290b894c56e66fb03a37d7cc3c39855935816813b5c9693eebbbab1011860", size = 1277925, upload-time = "2026-04-28T21:02:01.007Z" },
+]
+
+[[package]]
 name = "typeguard"
 version = "4.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3369,6 +3382,7 @@ real-robot = [
     { name = "roboticstoolbox-python" },
     { name = "scipy" },
     { name = "spatialgeometry" },
+    { name = "trossen-arm" },
     { name = "ur-rtde" },
     { name = "zerorpc" },
 ]
@@ -3433,6 +3447,7 @@ real-robot = [
     { name = "roboticstoolbox-python", specifier = "==1.1.1" },
     { name = "scipy", specifier = "==1.11.4" },
     { name = "spatialgeometry", specifier = "==1.1.0" },
+    { name = "trossen-arm", specifier = ">=1.9.0,<1.10.0" },
     { name = "ur-rtde", specifier = "==1.6.2" },
     { name = "zerorpc", specifier = ">=0.6.3" },
 ]

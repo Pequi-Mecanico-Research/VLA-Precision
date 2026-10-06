@@ -1,0 +1,223 @@
+# Shared: Configuration format version.
+schema_version: 1
+
+# Shared: Enables concise startup diagnostics without changing training behavior.
+debug: True
+
+# Shared: True requires byte-identical Python sources on distributed processes.
+strict_distributed_consistency: true
+
+# Shared: Experiment identity used by checkpoints, logs, and distributed handshakes.
+experiment:
+  name: wxai_organize_generic_objects
+  seed: 42
+
+# Shared: Task semantics used by server and robot-side processes.
+task:
+  instruction: Organize the objects on the table
+  # reset_procedure/setup_mode left at schema defaults ("standard_ur"/"single-arm-learned-gripper")
+  # on purpose: WidowXRobot.reset() is self-contained (see robotics/robots/widowx.py) and never
+  # reads task.reset_procedure — but environments/factory.py still constructs it unconditionally
+  # for every robot kind (`build_reset_procedure(config.task.reset_procedure)`), so this string
+  # must still name a real entry in robotics/tasks/reset.py's _PROCEDURES, even though it is then
+  # discarded. setup_mode only matters via the literal string "single-arm-fixed-gripper" (a
+  # boolean check in acob/factory.py); anything else, including the default, means "learned
+  # gripper", which is correct here (WidowXInputs' 7D action includes the gripper).
+  completion_detector: manual
+  reward_function: chunk_completion
+  regrasp:
+    enabled: false
+  arm_mode: single
+  image_keys: [base_0_rgb, left_wrist_0_rgb, right_wrist_0_rgb]
+  # Must match WidowXRobot.observations()'s keys, in the order they get concatenated into the
+  # flat 7D state WidowXInputs expects: 6 arm joints (rad) + 1 gripper (m).
+  proprio_keys: [joint_positions, gripper_position]
+  action_horizon: 3
+  completion_reward: 10.0
+  time_reward: -0.01
+  max_episode_length: 250
+
+# Robot: High-level robot motion, reset, and action-space behavior.
+robot:
+  kind: wxai
+  control_hz: 30.0
+  arms:
+    left:
+      # 6 joints (rad) + gripper (m) — NOT a Cartesian pose, unlike UR/Franka's arms.left.
+      # ⚠️ Placeholder, not validated on the physical arm — confirm this is actually a safe,
+      # collision-free "ready" pose before running anything for real.
+      reset_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04]
+      reset_pose_range: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.0]
+  random_reset: true
+  options:
+    model: wxai_v0 # trossen_arm.Model enum name
+    end_effector: wxai_v0_follower # trossen_arm.StandardEndEffector enum name
+    reset_time_sec: 5.0
+    goal_time_per_step: 0.05
+    # Safety clipping (see robotics/robots/widowx.py:_safe_target) — same placeholders already
+    # flagged as unvalidated in the Caminho-A YAML (integrations/openpi/inference/configs/widowx.yaml).
+    max_relative_step:
+      arm: 0.15 # rad, per joint
+      gripper: 0.02 # m
+
+# Robot: End-effector type — the WidowX gripper is the driver's 7th joint (robotics/grippers/widowx.py),
+# not a separate serial device like UR's/Franka's gripper.
+gripper:
+  kind: wxai
+
+# Robot: Human intervention interface.
+# Resolved (2026-10-06) — see docs/widowx-intervencao-plano.md for the full design and
+# docs/widowx-setup.md for status. Uses a physical gravity-compensated leader arm (a second
+# trossen_arm connection, NOT the lerobot_trossen package) instead of keyboard Cartesian deltas:
+# LeaderArmIntervention (robotics/wrappers/leader_intervention.py) never calls
+# base_action_to_tcp_action, so the old KeyboardIntervention blocker doesn't apply here.
+teleoperation:
+  kind: widowx_leader
+  device: "CHANGE_ME_LEADER_ARM_IP" # leader arm's own trossen_arm IP, separate from robot.server_url
+  completion_double_press_interval: 0.5
+  options:
+    trigger_key: "t" # toggles human/policy control; press again to release
+    model: wxai_v0
+    end_effector: wxai_v0_leader
+    mirror_goal_time: 0.1 # seconds; how fast the leader arm tracks the follower while idle
+    # staged_positions: [0, 0, 0, 0, 0, 0, 0]  # uncomment to override the SDK default
+
+# Server: Offline dataset mapping and preprocessing for Replay and Context buffers.
+data:
+  # ⚠️ UNCONFIRMED. This is the dataset for the "organize_with_generic_objects" checkpoint
+  # specifically (not the "organize-table-cube" dataset from widowx-integration.md, which is a
+  # different task/checkpoint family). The only lead so far is the checkpoint's own norm_stats
+  # asset_id, `jv-costa/pi05_widowxai_organize_table-generic-0-30ep-21v` — which may or may not
+  # be the literal HF Hub dataset repo_id. Confirm this before running `preprocess` for real;
+  # preprocessing against the wrong dataset fails or, worse, silently trains on mismatched data.
+  lerobot_repo_id: jv-costa/pi05_widowxai_organize_table-generic-0-30ep-21v
+  state_key: observation.state
+  state_indices: [0, 1, 2, 3, 4, 5, 6]
+  action_key: action
+  action_indices: [0, 1, 2, 3, 4, 5, 6]
+  extra_delta_transform: false
+  image_key_map:
+    base_0_rgb: observation.images.cam_high
+    left_wrist_0_rgb: observation.images.cam_wrist
+    right_wrist_0_rgb: observation.images.cam_low
+  preprocess:
+    num_episodes: "10"
+    chunk_mode: overlap
+    bc_only: true
+    context_batch_size: 64
+    workers: 4
+    overwrite: true
+
+# Server: OpenPI model profile and Stage-I weights used to initialize Stage II.
+openpi:
+  model: pi05
+  name: pi05_acob_widowx
+  initialization_config_name: pi05_full_finetune_widowx
+  action_dim: 32
+  action_horizon: null
+  max_token_len: 200
+  num_workers: 2
+  fsdp_devices: 1
+  sample_steps: 10
+  # The checkpoint downloaded in docs/widowx-setup.md section 4 — already confirmed to match the
+  # directory layout resolve_openpi_checkpoint/resolve_openpi_assets expect, no reorganization.
+  initialization_checkpoint: ../checkpoints/pi05_organize_with_generic_objects-finetune-30ep-20k
+  # null: this checkpoint has no numeric step subfolder (params/ sits directly at the root), so
+  # resolve_openpi_checkpoint resolves it without needing a step number.
+  initialization_checkpoint_step: null
+  lr_schedule:
+    warmup_steps: 1000
+    peak_lr: 0.00001
+    decay_steps: 10000
+    decay_lr: 0.0000025
+  optimizer:
+    b1: 0.9
+    b2: 0.95
+    eps: 0.00000001
+    weight_decay: 0.0000000001
+    clip_gradient_norm: 1.0
+
+# Server: ACoB objective weights and critic settings. Unchanged from the UR/Franka defaults —
+# nothing here is robot-specific, per docs/entendendo-o-acob.md's layering (the algorithm itself
+# is robot-agnostic).
+acob:
+  critic_encoder: resnet-pretrained
+  discount: 0.99
+  reward_scale: 1.0
+  reward_bias: 0.0
+  dense_reward: false
+  actor_flow_weight: 0.25
+  actor_improvement_weight: 0.5
+  actor_reference_weight: 0.25
+  actor_improvement_margin: 0.0
+  actor_improvement_temperature: 0.05
+  actor_improvement_direct_delta: false
+  critic_vla_conservative_weight: 0.0
+  critic_intervention_preference_weight: 50.0
+  critic_intervention_preference_margin: 0.05
+  ablate_critic_preference: false
+  ablate_actor_bc: false
+  ablate_actor_advantage: false
+
+# Server: ACoB-Stream online update, publication, and collection schedule. Left at the same
+# defaults as the UR task — untuned for WidowX, revisit once real rollouts are running.
+stream:
+  critic_updates_per_step: 2
+  correction_to_replay_ratio: 1.0
+  critic_warmup_steps: 100
+  publish_interval: 10
+  buffer_save_interval: 1000
+  log_interval: 10
+  random_steps: 0
+  training_starts: 100
+  max_steps: 1000000
+
+# Server: Capacities and sampling policy for Replay, Correction, and Context buffers.
+buffers:
+  replay_capacity: 200000
+  correction_capacity: 200000
+  replay_recent_window: 10600
+  replay_success_ratio: 0.0
+  context_capacity: 200000
+  context_shard_size: 4096
+
+# Server: Actor-side collection behavior and GPU selection from deployment.
+actor:
+  environment_save_video: false
+  completion_detection_enabled: true
+  wait_for_learner: true
+
+# Server: Learner batch construction, warmup, and asynchronous prefetch behavior.
+learner:
+  batch_size: 128
+  warmup_steps: 1
+  prefetch_workers: 6
+  prefetch_queue_size: 2
+  prefetch_max_inflight_per_kind: 2
+  prefetch_to_device: true
+
+# Server: Synchronized Stage-II Actor and Critic checkpoint policy.
+checkpoint:
+  save_interval: 250
+  keep_period: 250
+  resume: true
+  overwrite: false
+  resume_step: 0
+
+# Server: Rollout count, timeout, reset, and checkpoint selection for evaluation.
+evaluation:
+  checkpoint_step: 0
+  episodes: 20
+  episode_timeout_seconds: 30.0
+  progress_interval_seconds: 5.0
+  allow_intervention: true
+  regrasp_before_reset: false
+
+# Server: Console and W&B logging configuration.
+logging:
+  level: INFO
+  transition_log_interval: 10
+  training_metrics_window: 20
+  wandb:
+    enabled: true
+    project: vla-precision

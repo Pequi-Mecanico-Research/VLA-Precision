@@ -17,16 +17,19 @@ from vla_precision.robotics.robots import RobotFactory, build_robot
 from vla_precision.robotics.tasks.completion import build_completion_detector
 from vla_precision.robotics.tasks.reset import build_reset_procedure
 from vla_precision.robotics.tasks.reward import build_reward_function
-from vla_precision.robotics.teleoperation import KeyboardEmergencyStopDetector
+from vla_precision.robotics.teleoperation import KeyboardEmergencyStopDetector, build_widowx_leader_expert
 from vla_precision.robotics.wrappers import (
     ActionChunkWrapper,
     CompletionRewardWrapper,
     FlattenObservationWrapper,
     KeyboardIntervention,
+    LeaderArmIntervention,
     QuaternionToEulerWrapper,
     RegraspResetWrapper,
     RelativeFrameWrapper,
 )
+
+_DEFAULT_TELEOPERATION_FACTORIES = {"widowx_leader": build_widowx_leader_expert}
 
 
 class EnvironmentFactory(Protocol):
@@ -112,9 +115,14 @@ def build_environment(
         video_directory=Path(config.paths.output_root) / "videos",
         emergency_stop=emergency_stop,
     )
+    # WidowX AI has no Cartesian TCP pose concept at all (joint-space native) — without this,
+    # RelativeFrameWrapper's reset() crashes on obs["state"]["tcp_pose"], which WidowXRobot never
+    # produces (see docs/widowx-setup.md).
     action_reference_frame = (
         str(config.robot.options.get("reference_frame", "tcp"))
         if config.robot.kind == "franka"
+        else "joint"
+        if config.robot.kind == "wxai"
         else "tcp"
     )
     env: gym.Env = RelativeFrameWrapper(
@@ -135,7 +143,7 @@ def build_environment(
         completion_event = threading.Event() if dual_arm or config.teleoperation.kind != "keyboard" else None
         expert = None
         if config.teleoperation.kind != "keyboard":
-            factories = teleoperation_factories or {}
+            factories = {**_DEFAULT_TELEOPERATION_FACTORIES, **(teleoperation_factories or {})}
             if config.teleoperation.kind not in factories:
                 raise ValueError(
                     f"Teleoperation kind {config.teleoperation.kind!r} needs an extension implementing TeleoperationDevice"
@@ -145,34 +153,40 @@ def build_environment(
                 dual_arm,
                 completion_event,
             )
-        intervention = KeyboardIntervention(
-            env,
-            step_size_pos=config.teleoperation.step_size_position,
-            step_size_rot=config.teleoperation.step_size_rotation,
-            step_size_pos_alt=config.teleoperation.step_size_position_alt,
-            step_size_rot_alt=config.teleoperation.step_size_rotation_alt,
-            dual_arm=dual_arm,
-            left_keyboard_path=config.teleoperation.left_device,
-            right_keyboard_path=config.teleoperation.right_device,
-            left_step_size_pos=config.teleoperation.options.get("left_step_size_position"),
-            left_step_size_rot=config.teleoperation.options.get("left_step_size_rotation"),
-            left_step_size_pos_alt=config.teleoperation.options.get("left_step_size_position_alt"),
-            left_step_size_rot_alt=config.teleoperation.options.get("left_step_size_rotation_alt"),
-            right_step_size_pos=config.teleoperation.options.get("right_step_size_position"),
-            right_step_size_rot=config.teleoperation.options.get("right_step_size_rotation"),
-            right_step_size_pos_alt=config.teleoperation.options.get("right_step_size_position_alt"),
-            right_step_size_rot_alt=config.teleoperation.options.get("right_step_size_rotation_alt"),
-            reward_keyboard_arm=str(config.teleoperation.options.get("reward_keyboard_arm", "left")),
-            completion_double_press_interval=config.teleoperation.completion_double_press_interval,
-            left_gripper_start_position=_start_position(
-                config.gripper.left_start_position, config.gripper.start_position
-            ),
-            right_gripper_start_position=_start_position(
-                config.gripper.right_start_position, config.gripper.start_position
-            ),
-            expert=expert,
-            completion_event=completion_event,
-        )
+        if config.robot.kind == "wxai":
+            # Joint-space, leader-arm-driven intervention — see docs/widowx-intervencao-plano.md.
+            # No Cartesian deltas, no base_action_to_tcp_action; KeyboardIntervention's UR/Franka
+            # path is untouched.
+            intervention = LeaderArmIntervention(env, expert=expert, completion_event=completion_event)
+        else:
+            intervention = KeyboardIntervention(
+                env,
+                step_size_pos=config.teleoperation.step_size_position,
+                step_size_rot=config.teleoperation.step_size_rotation,
+                step_size_pos_alt=config.teleoperation.step_size_position_alt,
+                step_size_rot_alt=config.teleoperation.step_size_rotation_alt,
+                dual_arm=dual_arm,
+                left_keyboard_path=config.teleoperation.left_device,
+                right_keyboard_path=config.teleoperation.right_device,
+                left_step_size_pos=config.teleoperation.options.get("left_step_size_position"),
+                left_step_size_rot=config.teleoperation.options.get("left_step_size_rotation"),
+                left_step_size_pos_alt=config.teleoperation.options.get("left_step_size_position_alt"),
+                left_step_size_rot_alt=config.teleoperation.options.get("left_step_size_rotation_alt"),
+                right_step_size_pos=config.teleoperation.options.get("right_step_size_position"),
+                right_step_size_rot=config.teleoperation.options.get("right_step_size_rotation"),
+                right_step_size_pos_alt=config.teleoperation.options.get("right_step_size_position_alt"),
+                right_step_size_rot_alt=config.teleoperation.options.get("right_step_size_rotation_alt"),
+                reward_keyboard_arm=str(config.teleoperation.options.get("reward_keyboard_arm", "left")),
+                completion_double_press_interval=config.teleoperation.completion_double_press_interval,
+                left_gripper_start_position=_start_position(
+                    config.gripper.left_start_position, config.gripper.start_position
+                ),
+                right_gripper_start_position=_start_position(
+                    config.gripper.right_start_position, config.gripper.start_position
+                ),
+                expert=expert,
+                completion_event=completion_event,
+            )
         completion_event = intervention.completion_event
         env = intervention
 

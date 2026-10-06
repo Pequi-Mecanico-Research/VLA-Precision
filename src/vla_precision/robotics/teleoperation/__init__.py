@@ -5,6 +5,11 @@ from vla_precision.robotics.teleoperation.keyboard import (
     KeyboardEmergencyStopDetector,
 )
 from vla_precision.robotics.teleoperation.single_keyboard import SingleKeyboardExpert
+from vla_precision.robotics.teleoperation.widowx_leader import (
+    WidowXLeaderArm,
+    WidowXLeaderExpert,
+    build_widowx_leader_expert,
+)
 
 __all__ = [
     "DualKeyboardExpert",
@@ -12,4 +17,7 @@ __all__ = [
     "KeyboardEmergencyStopDetector",
     "SingleKeyboardExpert",
     "TeleoperationDevice",
+    "WidowXLeaderArm",
+    "WidowXLeaderExpert",
+    "build_widowx_leader_expert",
 ]

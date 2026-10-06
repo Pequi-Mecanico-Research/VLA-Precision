@@ -14,7 +14,7 @@ from openpi.models import model as openpi_model
 from openpi.training import config as openpi_config
 from typing_extensions import override
 
-from vla_precision.integrations.openpi.policies import dual_ur, franka, ur5e
+from vla_precision.integrations.openpi.policies import dual_ur, franka, ur5e, widowx
 
 
 def make_robot_data_config_template(factory, *, dual: bool = False):
@@ -173,6 +173,64 @@ class LeRobotFrankaDataConfig(openpi_config.DataConfigFactory):
         data_transforms = transforms.Group(
             inputs=[franka.FrankaInputs(model_type=model_config.model_type)],
             outputs=[franka.FrankaOutputs()],
+        )
+        if self.extra_delta_transform:
+            mask = transforms.make_bool_mask(6, -1)
+            data_transforms = data_transforms.push(
+                inputs=[transforms.DeltaActions(mask)],
+                outputs=[transforms.AbsoluteActions(mask)],
+            )
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack,
+            data_transforms=data_transforms,
+            model_transforms=openpi_config.ModelTransformFactory()(model_config),
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotWidowXDataConfig(openpi_config.DataConfigFactory):
+    """
+    WidowX AI action space is joint-space (7D: joint_0..joint_5 + gripper), not a Cartesian TCP
+    pose. The confirmed reference training config does not use a delta/absolute-action wrapper
+    (unlike UR5e/Franka); ``extra_delta_transform`` defaults off and only exists so this class
+    stays compatible with the generic task-level ``data.extra_delta_transform`` override.
+    """
+
+    extra_delta_transform: bool = False
+    state_key: str = "observation.state"
+    action_key: str = "action"
+    image_key_map: dict[str, str] | None = None
+
+    @override
+    def create(
+        self,
+        assets_dirs: pathlib.Path,
+        model_config: openpi_model.BaseModelConfig,
+    ) -> openpi_config.DataConfig:
+        repack = transforms.Group(
+            inputs=[
+                transforms.RepackTransform(
+                    {
+                        "observation/image": (self.image_key_map or {}).get(
+                            "base_0_rgb", "observation.images.cam_high"
+                        ),
+                        "observation/wrist_image": (self.image_key_map or {}).get(
+                            "left_wrist_0_rgb", "observation.images.cam_wrist"
+                        ),
+                        "observation/low_image": (self.image_key_map or {}).get(
+                            "right_wrist_0_rgb", "observation.images.cam_low"
+                        ),
+                        "observation/state": self.state_key,
+                        "actions": self.action_key,
+                        "prompt": "task",
+                    }
+                )
+            ]
+        )
+        data_transforms = transforms.Group(
+            inputs=[widowx.WidowXInputs(model_type=model_config.model_type)],
+            outputs=[widowx.WidowXOutputs()],
         )
         if self.extra_delta_transform:
             mask = transforms.make_bool_mask(6, -1)

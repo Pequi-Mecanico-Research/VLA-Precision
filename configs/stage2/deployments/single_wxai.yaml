@@ -1,0 +1,75 @@
+# Physical deployment for a single WidowX AI, running actor/learner/robot all on one machine
+# (one RTX 4090) — the arm and its 3 cameras must be physically reachable from this same machine.
+# No `robot_server:` section here: unlike UR, WidowX AI has no separate low-level control
+# service — `WidowXRobot` talks directly to the `trossen_arm` SDK in-process.
+
+# Server: GPU exposed to the online Actor process.
+actor:
+  cuda_visible_devices: "0"
+
+# Server: GPU exposed to the online Learner process.
+# Same single GPU as the Actor (only one 4090 available) — watch VRAM headroom: the actor runs
+# π0.5 inference while the learner trains the critic + action-expert LoRA concurrently. If this
+# is tight in practice, the fix is to lower learner.batch_size / stream.critic_updates_per_step,
+# not to invent a second GPU that does not exist.
+learner:
+  cuda_visible_devices: "0"
+
+# Server: GPUs used to build the offline Replay and Context caches.
+preprocess:
+  cuda_visible_devices: "0"
+
+# Server: Optional machine-local dataset mirror.
+data:
+  lerobot_root: null
+
+# Robot: WidowX AI follower IP address.
+# NOTE: unlike UR (an HTTP URL) this field holds a bare IP — `WidowXRobot` passes it straight to
+# `trossen_arm.TrossenArmDriver.configure(serv_ip=...)`.
+robot:
+  server_url: "192.168.1.2"
+
+# Robot: RealSense devices exposed as policy image keys. Serials copied from the team's own
+# already-working reference bridge (manipulador/openpi/examples/trossen_ai/main.py) — confirm
+# they still match the cameras physically wired to this machine before relying on them.
+cameras:
+  capture_mode: sync
+  display_image: true
+  devices:
+    base_0_rgb:
+      driver: realsense
+      serial_number: "944122073060" # cam_high
+      width: 640
+      height: 480
+      fps: 30
+    left_wrist_0_rgb:
+      driver: realsense
+      serial_number: "243322072096" # cam_wrist
+      width: 640
+      height: 480
+      fps: 30
+    right_wrist_0_rgb:
+      driver: realsense
+      serial_number: "102122061119" # cam_low
+      width: 640
+      height: 480
+      fps: 30
+
+# Shared: AgentLace connects Actor to Learner; Pyro connects Actor to the environment.
+# All loopback: everything (robot, actor, learner) runs on this one machine for the first test.
+network:
+  learner_host: localhost
+  trainer_port: 3335
+  data_port: 3336
+  environment_host: 127.0.0.1
+  environment_bind_host: 0.0.0.0
+  environment_port: 50001
+
+# Shared: Runtime paths loaded by server and robot-side processes.
+paths:
+  train_data_root: ./train_data
+  checkpoint_root: ./checkpoints
+  cache_root: ./.cache
+  output_root: ./results
+  openpi_assets_root: ./assets
+  critic_resnet10_params_path: ./assets/resnet10_params.pkl

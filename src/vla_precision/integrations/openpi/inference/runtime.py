@@ -29,6 +29,10 @@ def _backend_class(name: str):
         from .backends.franka import Inference
 
         return Inference
+    if name == "widowx":
+        from .backends.widowx import Inference
+
+        return Inference
     raise ValueError(f"Unsupported native inference backend: {name}")
 
 

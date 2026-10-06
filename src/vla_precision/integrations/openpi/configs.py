@@ -24,6 +24,7 @@ from vla_precision.integrations.openpi.data_configs import (
     LeRobotDualUR5eDataConfig,
     LeRobotFrankaDataConfig,
     LeRobotUR5eDataConfig,
+    LeRobotWidowXDataConfig,
     make_robot_data_config_template,
 )
 
@@ -90,6 +91,18 @@ _CONFIGS = [
             "gs://openpi-assets/checkpoints/pi05_base/params"
         ),
     ),
+    # WidowX AI's data config already defaults to the right image keys
+    # (cam_high/cam_wrist/cam_low) and has no delta-action wrapper, so it is
+    # constructed directly here instead of through make_robot_data_config_template
+    # (which would inject UR/Franka's exterior_image/wrist_image key names).
+    openpi_config.TrainConfig(
+        name="pi05_full_finetune_widowx",
+        model=pi0_config.Pi0Config(pi05=True),
+        data=LeRobotWidowXDataConfig(repo_id=""),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi05_base/params"
+        ),
+    ),
     openpi_config.TrainConfig(
         name="pi0_acob_ur5e",
         model=pi0_config.Pi0Config(action_expert_variant="gemma_300m_lora"),
@@ -124,6 +137,22 @@ _CONFIGS = [
         name="pi05_acob_dual_ur",
         model=pi0_config.Pi0Config(pi05=True, action_expert_variant="gemma_300m_lora"),
         data=make_robot_data_config_template(LeRobotDualUR5eDataConfig, dual=True),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi05_base/params"
+        ),
+        freeze_filter=_ACTION_EXPERT_ONLY_FREEZE_FILTER,
+        ema_decay=None,
+    ),
+    # model= must match the checkpoint's own shape exactly (paligemma_variant included) —
+    # CheckpointWeightLoader/_merge_params only restores keys present in both the checkpoint
+    # and this target graph; a narrower model= here would silently drop the paligemma LoRA
+    # weights instead of erroring. See docs/widowx-setup.md section 6.2.
+    openpi_config.TrainConfig(
+        name="pi05_acob_widowx",
+        model=pi0_config.Pi0Config(
+            pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+        ),
+        data=LeRobotWidowXDataConfig(repo_id=""),
         weight_loader=weight_loaders.CheckpointWeightLoader(
             "gs://openpi-assets/checkpoints/pi05_base/params"
         ),
