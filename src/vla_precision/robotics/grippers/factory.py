@@ -8,6 +8,7 @@ from vla_precision.config.schema import RootConfig
 from vla_precision.robotics.grippers.base import Gripper
 from vla_precision.robotics.grippers.franka import FrankaPGIGripper
 from vla_precision.robotics.grippers.ur import FixedGripper, URGripper
+from vla_precision.robotics.grippers.widowx import WidowXGripper
 
 GripperFactory = Callable[..., Gripper]
 
@@ -66,6 +67,7 @@ def build_gripper(
     builders: dict[str, GripperFactory] = {
         "pgi": _ur_gripper,
         "franka_pgi": _franka_gripper,
+        "widowx": lambda config, *, dual_arm, state_fields: WidowXGripper(),
         **(factories or {}),
     }
     kind = config.gripper.kind

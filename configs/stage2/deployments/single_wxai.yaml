@@ -1,0 +1,64 @@
+# WidowX AI: valores da máquina. Explicação: docs/widowx.md e README_WIDOWX.md.
+# Dois PCs: o da GPU (5080: actor + learner + preprocess) e o ligado ao braço (serviço do WidowX +
+# robot-agent-bridge + câmeras). Os quatro processos carregam este mesmo arquivo.
+
+# Server: GPU do Actor. Na 5080 actor e learner dividem a mesma GPU.
+actor:
+  cuda_visible_devices: "0"
+
+# Server: GPU do Learner.
+learner:
+  cuda_visible_devices: "0"
+
+# Server: GPUs do pré-processamento (Replay e Context).
+preprocess:
+  cuda_visible_devices: "0"
+
+# Server: Pasta local do dataset (null = baixa do Hugging Face).
+data:
+  lerobot_root: null
+
+# Robot: Endereço do serviço do WidowX (roda na mesma máquina do robot-agent-bridge).
+robot:
+  server_url: http://127.0.0.1:5002/
+
+# Robot: Câmeras RealSense, uma por slot do modelo (task.image_keys).
+cameras:
+  capture_mode: sync
+  display_image: true
+  devices:
+    # cam_high do Stage 1. ⚠️ Confirmar que é a mesma câmera que gravou observation.images.env.
+    base_0_rgb:
+      driver: realsense
+      serial_number: "944122073060"
+      width: 640
+      height: 480
+      fps: 30
+    # cam_wrist do Stage 1 (observation.images.wrist).
+    left_wrist_0_rgb:
+      driver: realsense
+      serial_number: "243322072096"
+      width: 640
+      height: 480
+      fps: 30
+
+# Shared: AgentLace (Actor <-> Learner) e Pyro (Actor <-> robot-agent-bridge).
+network:
+  # Actor e Learner rodam no mesmo PC (a 5080).
+  learner_host: localhost
+  trainer_port: 3335
+  data_port: 3336
+  # IP do PC ligado ao braço, visto do PC da GPU. TROCAR antes de rodar.
+  environment_host: IP_DO_PC_DO_BRACO
+  environment_bind_host: 0.0.0.0
+  environment_port: 50001
+
+# Shared: Runtime paths.
+paths:
+  train_data_root: ./train_data
+  checkpoint_root: ./checkpoints
+  # Também guarda a cópia do dataset convertida para LeRobot v3.0.
+  cache_root: ./.cache
+  output_root: ./results
+  openpi_assets_root: ./assets
+  critic_resnet10_params_path: ./assets/resnet10_params.pkl

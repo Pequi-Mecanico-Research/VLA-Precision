@@ -9,6 +9,7 @@ from vla_precision.robotics.grippers.base import Gripper
 from vla_precision.robotics.robots.base import Robot
 from vla_precision.robotics.robots.franka import FrankaRobot
 from vla_precision.robotics.robots.ur import URRobot
+from vla_precision.robotics.robots.widowx import WidowXRobot
 from vla_precision.robotics.tasks.reset import ResetProcedure
 
 RobotFactory = Callable[..., Robot]
@@ -44,6 +45,21 @@ def _franka_robot(
     return FrankaRobot(config.robot, gripper=gripper)
 
 
+def _widowx_robot(
+    config: RootConfig,
+    *,
+    gripper: Gripper,
+    reset_procedure: ResetProcedure,
+    dual_arm: bool,
+) -> Robot:
+    # O WidowX tem reset próprio (pose de junta em robot.options.reset_positions); o
+    # task.reset_procedure é cartesiano, do UR, e não se aplica.
+    del reset_procedure
+    if dual_arm:
+        raise ValueError("WidowX AI é suportado só em task.arm_mode=single")
+    return WidowXRobot(config.robot, gripper=gripper)
+
+
 def build_robot(
     config: RootConfig,
     *,
@@ -60,6 +76,7 @@ def build_robot(
         "ur5e": _ur_robot,
         "dual_ur": _ur_robot,
         "franka": _franka_robot,
+        "widowx": _widowx_robot,
         **custom_builders,
     }
     try:

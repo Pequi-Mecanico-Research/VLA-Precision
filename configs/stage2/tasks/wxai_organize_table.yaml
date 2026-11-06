@@ -1,0 +1,197 @@
+# WidowX AI — "organize the table", duas câmeras. Explicação de cada escolha: docs/widowx.md.
+# Valores de máquina (IPs, GPUs, câmeras) ficam em configs/stage2/deployments/single_wxai.yaml.
+
+# Shared: Configuration format version.
+schema_version: 1
+
+# Shared: Enables concise startup diagnostics without changing training behavior.
+debug: True
+
+# Shared: True requires byte-identical Python sources on distributed processes.
+strict_distributed_consistency: true
+
+# Shared: Experiment identity used by checkpoints, logs, and distributed handshakes.
+experiment:
+  name: wxai_organize_table
+  seed: 42
+
+# Shared: Task semantics used by server and robot-side processes.
+task:
+  # Igual ao texto da tarefa no dataset (rafaeljose/table-inf_v21), inclusive as minúsculas.
+  instruction: organize the table
+  # Ignorado pelo WidowX (reset por pose de junta em robot.options); precisa ser um nome válido.
+  reset_procedure: standard_ur
+  completion_detector: manual
+  reward_function: chunk_completion
+  regrasp:
+    enabled: false
+  arm_mode: single
+  setup_mode: single-arm-learned-gripper
+  # Nomes dos slots do modelo. Cada um é uma câmera em cameras.devices (deployment) e uma coluna
+  # do dataset em data.image_key_map.
+  image_keys: [base_0_rgb, left_wrist_0_rgb]
+  # Estado 7D na ordem do dataset: 6 juntas (rad) + garra (m).
+  proprio_keys: [joint_0, joint_1, joint_2, joint_3, joint_4, joint_5, left_carriage_joint]
+  # Passos executados por consulta à política (10 a 30 Hz = ~3 decisões/s). O modelo continua
+  # prevendo 50 (openpi.action_horizon); só os primeiros 10 são executados.
+  action_horizon: 10
+  completion_reward: 10.0
+  time_reward: -0.01
+  # Em chunks: 400 x 10 passos / 30 Hz = ~133 s (os episódios do dataset têm ~100 s em média).
+  max_episode_length: 400
+
+# Robot: High-level robot motion, reset, and action-space behavior.
+robot:
+  kind: widowx
+  # Precisa ser igual ao --control-hz do serviço do WidowX e ao fps do dataset.
+  control_hz: 30.0
+  random_reset: false
+  options:
+    # Pose de início de cada episódio (rad; garra em m). Padrão: pose "staged" do lerobot_trossen.
+    reset_positions: [0.0, 1.0472, 0.5236, 0.6283, 0.0, 0.0, 0.0]
+    reset_duration: 3.0
+    # Espera um Enter no terminal do robot-agent-bridge antes de cada episódio (para arrumar a cena).
+    wait_for_operator: true
+
+# Robot: End-effector type. No WidowX a garra é a 7ª junta da ação.
+gripper:
+  kind: widowx
+
+# Robot: Human intervention. O serviço do WidowX faz a teleoperação (Espaço + braço-líder).
+teleoperation:
+  kind: widowx_leader
+  completion_double_press_interval: 0.5
+
+# Server: Offline dataset mapping and preprocessing for Replay and Context buffers.
+data:
+  # O dataset que treinou o checkpoint. Em v2.1: o VLA-Precision converte uma cópia local para v3.0.
+  lerobot_repo_id: rafaeljose/table-inf_v21
+  state_key: observation.state
+  # Todas as 7 colunas, na ordem original (as norm stats do checkpoint dependem disso).
+  state_indices: [0, 1, 2, 3, 4, 5, 6]
+  action_key: action
+  action_indices: [0, 1, 2, 3, 4, 5, 6]
+  # Posições absolutas de junta, como no treino.
+  extra_delta_transform: false
+  prompt_from_task: true
+  image_key_map:
+    base_0_rgb: observation.images.env
+    left_wrist_0_rgb: observation.images.wrist
+  preprocess:
+    num_episodes: all
+    chunk_mode: overlap
+    bc_only: true
+    context_batch_size: 16
+    workers: 4
+    overwrite: false
+
+# Server: OpenPI model profile and Stage-I weights used to initialize Stage II.
+openpi:
+  model: pi05
+  name: pi05_acob_widowx
+  initialization_config_name: pi05_full_finetune_widowx
+  action_dim: 32
+  # O checkpoint foi treinado prevendo 50 passos: mantém o modelo igual ao treino.
+  action_horizon: 50
+  max_token_len: 200
+  num_workers: 2
+  fsdp_devices: 1
+  sample_steps: 10
+  # Baixado pela B3 (tools/widowx/check_stage1_model.py): só params/ e assets/.
+  initialization_checkpoint: ./checkpoints/stage1/pi05_widowxai_organize_table_inf_b32_w16_20k
+  # null: o checkpoint não tem subpasta de passo (params/ fica direto na raiz).
+  initialization_checkpoint_step: null
+  lr_schedule:
+    warmup_steps: 1000
+    peak_lr: 0.00001
+    decay_steps: 10000
+    decay_lr: 0.0000025
+  optimizer:
+    b1: 0.9
+    b2: 0.95
+    eps: 0.00000001
+    weight_decay: 0.0000000001
+    clip_gradient_norm: 1.0
+
+# Server: ACoB objective weights and critic settings (valores do paper, iguais às tasks de referência).
+acob:
+  critic_encoder: resnet-pretrained
+  discount: 0.99
+  reward_scale: 1.0
+  reward_bias: 0.0
+  dense_reward: false
+  actor_flow_weight: 0.25
+  actor_improvement_weight: 0.5
+  actor_reference_weight: 0.25
+  actor_improvement_margin: 0.0
+  actor_improvement_temperature: 0.05
+  actor_improvement_direct_delta: false
+  critic_vla_conservative_weight: 0.0
+  critic_intervention_preference_weight: 50.0
+  critic_intervention_preference_margin: 0.05
+  ablate_critic_preference: false
+  ablate_actor_bc: false
+  ablate_actor_advantage: false
+
+# Server: ACoB-Stream online update, publication, and collection schedule.
+stream:
+  critic_updates_per_step: 2
+  correction_to_replay_ratio: 1.0
+  critic_warmup_steps: 100
+  publish_interval: 10
+  buffer_save_interval: 1000
+  log_interval: 10
+  random_steps: 0
+  training_starts: 100
+  max_steps: 1000000
+
+# Server: Capacities and sampling policy for Replay, Correction, and Context buffers.
+buffers:
+  replay_capacity: 200000
+  correction_capacity: 200000
+  replay_recent_window: 10600
+  replay_success_ratio: 0.0
+  context_capacity: 200000
+  context_shard_size: 4096
+
+# Server: Actor-side collection behavior.
+actor:
+  environment_save_video: false
+  completion_detection_enabled: true
+  wait_for_learner: true
+
+# Server: Learner batch construction.
+learner:
+  # Menor que o de referência (128) por causa da GPU de 16 GB. Ajustar depois da B3 e do T5.
+  batch_size: 32
+  warmup_steps: 1
+  prefetch_workers: 4
+  prefetch_queue_size: 2
+  prefetch_max_inflight_per_kind: 2
+  prefetch_to_device: true
+
+# Server: Synchronized Stage-II Actor and Critic checkpoint policy.
+checkpoint:
+  save_interval: 250
+  keep_period: 250
+  resume: true
+  overwrite: false
+  resume_step: 0
+
+# Server: Rollout count, timeout, reset, and checkpoint selection for evaluation.
+evaluation:
+  checkpoint_step: 0
+  episodes: 10
+  episode_timeout_seconds: 150.0
+  progress_interval_seconds: 5.0
+  allow_intervention: true
+  regrasp_before_reset: false
+
+# Server: Console and W&B logging configuration.
+logging:
+  level: INFO
+  transition_log_interval: 10
+  training_metrics_window: 20
+  wandb:
+    enabled: true
+    project: vla-precision
