@@ -1,0 +1,8 @@
+[submodule "third_party/openpi"]
+	path = third_party/openpi
+	url = https://github.com/Pequi-Mecanico-Research/openpi.git
+	branch = dev-pequi
+[submodule "third_party/lerobot_trossen"]
+	path = third_party/lerobot_trossen
+	url = https://github.com/Pequi-Mecanico-Research/lerobot_trossen.git
+	branch = main
