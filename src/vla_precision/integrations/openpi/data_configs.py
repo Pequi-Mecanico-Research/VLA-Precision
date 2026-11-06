@@ -15,7 +15,7 @@ from openpi.policies import widowx_policy  # vem do fork em third_party/openpi (
 from openpi.training import config as openpi_config
 from typing_extensions import override
 
-from vla_precision.integrations.openpi.policies import dual_ur, franka, ur5e
+from vla_precision.integrations.openpi.policies import dual_ur, franka, ur5e, widowx
 
 
 def make_robot_data_config_template(factory, *, dual: bool = False):
@@ -230,7 +230,8 @@ class LeRobotWidowXDataConfig(openpi_config.DataConfigFactory):
             ]
         )
         data_transforms = transforms.Group(
-            inputs=[widowx_policy.WidowXBaseInputs(model_type=model_config.model_type)],
+            # WidowxInputs = WidowXBaseInputs do fork, sem mudança; ver policies/widowx.py.
+            inputs=[widowx.WidowxInputs(model_type=model_config.model_type)],
             outputs=[widowx_policy.WidowXOutputs()],
         )
         if self.extra_delta_transform:
