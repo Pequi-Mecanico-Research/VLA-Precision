@@ -17,7 +17,7 @@ from openpi.training import data_loader as openpi_data_loader
 
 from vla_precision.config.schema import RootConfig, Stage1Config
 from vla_precision.data.indexing import materialize_lerobot_indices
-from vla_precision.data.paths import source_lerobot_root
+from vla_precision.data.lerobot_version import lerobot_dataset_root
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def create_torch_dataset(
 
     from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 
-    root = source_lerobot_root(root_config)
+    root = lerobot_dataset_root(root_config)  # converte uma cópia local para v3.0 se o dataset for v2.1
     metadata = LeRobotDatasetMetadata(data_config.repo_id, root=root)
     dataset = LeRobotDataset(
         data_config.repo_id,

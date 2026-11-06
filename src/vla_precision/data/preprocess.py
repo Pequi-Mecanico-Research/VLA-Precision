@@ -28,7 +28,8 @@ from vla_precision.acob_stream.buffers.context import ContextBuffer
 from vla_precision.config.loader import ResolvedConfig
 from vla_precision.config.schema import RootConfig
 from vla_precision.data.indexing import materialize_lerobot_indices
-from vla_precision.data.paths import preprocess_context_dir, preprocess_transition_dir, source_lerobot_root
+from vla_precision.data.lerobot_version import lerobot_dataset_root
+from vla_precision.data.paths import preprocess_context_dir, preprocess_transition_dir
 from vla_precision.integrations.openpi.adapter import OpenPIObservationAdapter
 from vla_precision.integrations.openpi.configs import (
     build_stage2_initialization_train_config,
@@ -674,7 +675,7 @@ def preprocess_train_cache_from_lerobot(
     )
     LeRobotDataset, LeRobotDatasetMetadata = _import_lerobot_dataset()
     image_key_map = dict(config.data.image_key_map)
-    src_root = source_lerobot_root(config)
+    src_root = lerobot_dataset_root(config)  # converte uma cópia local para v3.0 se o dataset for v2.1
     src_meta = LeRobotDatasetMetadata(config.data.lerobot_repo_id, root=src_root)
     src = LeRobotDataset(config.data.lerobot_repo_id, root=src_root)
     data_metadata = materialize_lerobot_indices(

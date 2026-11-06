@@ -216,6 +216,8 @@ class Stage1DataConfig:
 
     lerobot_repo_id: str = ""
     lerobot_root: str | None = None
+    # Se o dataset estiver em LeRobot v2.1, converte uma cópia local para v3.0 (ver data/lerobot_version.py).
+    lerobot_auto_convert: bool = True
     state_key: str = "observation.state"
     state_indices: tuple[int, ...] = ()
     action_key: str = "action"
