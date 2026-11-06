@@ -25,6 +25,7 @@ from vla_precision.integrations.openpi.data_configs import (
     LeRobotFrankaDataConfig,
     LeRobotUR5eDataConfig,
     make_robot_data_config_template,
+    make_widowx_data_config_template,
 )
 
 OPENPI_UPSTREAM_COMMIT = "2d70d966582e711128ad8358d8dbf23d2cc3d658"
@@ -124,6 +125,27 @@ _CONFIGS = [
         name="pi05_acob_dual_ur",
         model=pi0_config.Pi0Config(pi05=True, action_expert_variant="gemma_300m_lora"),
         data=make_robot_data_config_template(LeRobotDualUR5eDataConfig, dual=True),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi05_base/params"
+        ),
+        freeze_filter=_ACTION_EXPERT_ONLY_FREEZE_FILTER,
+        ema_decay=None,
+    ),
+    # WidowX AI (duas câmeras). O checkpoint de partida é o full finetuning treinado no fork com
+    # a receita pi05_widowxai_organize_table_inf; o YAML da task aponta para ele via
+    # openpi.initialization_checkpoint, que substitui o weight_loader abaixo.
+    openpi_config.TrainConfig(
+        name="pi05_full_finetune_widowx",
+        model=pi0_config.Pi0Config(pi05=True),
+        data=make_widowx_data_config_template(),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi05_base/params"
+        ),
+    ),
+    openpi_config.TrainConfig(
+        name="pi05_acob_widowx",
+        model=pi0_config.Pi0Config(pi05=True, action_expert_variant="gemma_300m_lora"),
+        data=make_widowx_data_config_template(),
         weight_loader=weight_loaders.CheckpointWeightLoader(
             "gs://openpi-assets/checkpoints/pi05_base/params"
         ),
