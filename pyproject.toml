@@ -85,8 +85,11 @@ override-dependencies = [
 [tool.uv.sources]
 agentlace = { git = "https://github.com/youliangtan/agentlace.git", rev = "cf2c337c5e3694cdbfc14831b239bd657bc4894d" }
 lerobot = { git = "https://github.com/huggingface/lerobot", rev = "d6ea3bbce0fc8c75138f02639ac4ceaf12a67829" }
-openpi = { git = "https://github.com/Physical-Intelligence/openpi.git", rev = "2d70d966582e711128ad8358d8dbf23d2cc3d658" }
-openpi-client = { git = "https://github.com/Physical-Intelligence/openpi.git", subdirectory = "packages/openpi-client", rev = "2d70d966582e711128ad8358d8dbf23d2cc3d658" }
+# Fork da equipe (Pequi-Mecanico-Research/openpi, branch feat/vla-precision) como submodule em
+# third_party/openpi: upstream + configs/transforms do WidowX. Rode
+# `git submodule update --init third_party/openpi` antes do `uv sync`.
+openpi = { path = "third_party/openpi", editable = true }
+openpi-client = { path = "third_party/openpi/packages/openpi-client", editable = true }
 
 [tool.ruff]
 line-length = 120
