@@ -79,7 +79,10 @@ data:
     left_wrist_0_rgb: observation.images.wrist
   preprocess:
     num_episodes: all
-    chunk_mode: overlap
+    # PROVISÓRIO (docs/widowx.md, D6): cada linha grava ~12,5 MiB de contexto em disco.
+    # overlap = 1 linha por frame (90.743 linhas, ~1,1 TiB); non_overlap = 1 a cada action_horizon
+    # frames (~9.000 linhas, ~111 GiB com horizonte 10).
+    chunk_mode: non_overlap
     bc_only: true
     context_batch_size: 16
     workers: 4
@@ -143,6 +146,8 @@ stream:
   log_interval: 10
   random_steps: 0
   training_starts: 100
+  # O cache de contexto grava ~12,5 MiB por passo do actor e não reaproveita entradas: o disco
+  # cresce até aqui (ver docs/widowx.md, D6). Ajustar ao disco do PC da GPU.
   max_steps: 1000000
 
 # Server: Capacities and sampling policy for Replay, Correction, and Context buffers.

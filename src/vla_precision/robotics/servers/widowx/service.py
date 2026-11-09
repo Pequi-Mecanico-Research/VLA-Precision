@@ -240,6 +240,8 @@ class WidowXService:
         self._sync_deadline = 0.0
         self.fault: str | None = None
         self._lock = threading.Lock()
+        self._tick_done = threading.Condition(self._lock)  # avisa quando há uma leitura nova
+        self._tick_count = 0
         self._chunk: _ChunkJob | None = None
         self._toggle_requested = False
         self._commands: list[tuple[Callable[[], object], dict]] = []
@@ -267,8 +269,18 @@ class WidowXService:
             self._toggle_requested = True
 
     def state(self) -> dict:
-        with self._lock:
-            return {**self._latest, "intervention": self.intervention, "mode": self.mode, "fault": self.fault}
+        """Estado do follower lido no próximo ciclo do laço (depois do último comando enviado).
+
+        Sem essa espera, o estado lido logo depois de um chunk seria o do começo do último ciclo,
+        antes do último passo: a política decidiria o próximo chunk com um estado velho.
+        """
+        with self._tick_done:
+            start = self._tick_count
+            self._tick_done.wait_for(lambda: self._tick_count > start, timeout=2 * self.period + 0.5)
+            return self._snapshot()
+
+    def _snapshot(self) -> dict:
+        return {**self._latest, "intervention": self.intervention, "mode": self.mode, "fault": self.fault}
 
     def config(self) -> dict:
         return {
@@ -316,7 +328,7 @@ class WidowXService:
             LOGGER.info("Reset: levando os braços para %s em %.1f s", np.round(goal, 3).tolist(), duration)
             self.arms.move_both(goal, float(duration))
             self._latest = self.arms.follower_state()
-            return self.state()
+            return self._snapshot()
 
         return self._run_in_loop(run, timeout=float(duration) + 15.0)
 
@@ -369,6 +381,8 @@ class WidowXService:
         state = self.arms.follower_state()
         with self._lock:
             self._latest = state
+            self._tick_count += 1
+            self._tick_done.notify_all()
             toggle, self._toggle_requested = self._toggle_requested, False
             chunk = self._chunk
         active_chunk = chunk if chunk is not None and not chunk.done.is_set() else None

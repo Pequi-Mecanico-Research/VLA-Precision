@@ -34,6 +34,9 @@ cameras:
       width: 640
       height: 480
       fps: 30
+      options:
+        # Estica para 224x224 como o cliente do Stage 1 (o dataset não tem faixas pretas).
+        resize: stretch
     # cam_wrist do Stage 1 (observation.images.wrist).
     left_wrist_0_rgb:
       driver: realsense
@@ -41,6 +44,9 @@ cameras:
       width: 640
       height: 480
       fps: 30
+      options:
+        # Estica para 224x224 como o cliente do Stage 1 (o dataset não tem faixas pretas).
+        resize: stretch
 
 # Shared: AgentLace (Actor <-> Learner) e Pyro (Actor <-> robot-agent-bridge).
 network:

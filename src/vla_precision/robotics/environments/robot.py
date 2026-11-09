@@ -144,9 +144,17 @@ class RobotEnvironment(gym.Env):
                     # before the final (normally no-op) OpenCV resize.  Keep
                     # that aspect-preserving, zero-padded image contract: a
                     # direct resize changes the policy input distribution.
-                    resized = image_tools.convert_to_uint8(
-                        image_tools.resize_with_pad(bgr, 224, 224)
-                    )
+                    # Exception: ``resize: stretch`` (WidowX) stretches to 224x224
+                    # like the Stage-1 client, because its dataset frames were
+                    # stretched (no padding bands); see docs/widowx.md, D3.
+                    if self.camera_options.get(name, {}).get("resize", "pad") == "stretch":
+                        import cv2
+
+                        resized = cv2.resize(bgr, (224, 224))
+                    else:
+                        resized = image_tools.convert_to_uint8(
+                            image_tools.resize_with_pad(bgr, 224, 224)
+                        )
                     images[name] = resized[..., ::-1]
                     display[name] = resized
                     display[name + "_full"] = resized
