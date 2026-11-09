@@ -90,7 +90,9 @@ def _state_dim(config: RootConfig) -> int:
     if config.data.state_indices:
         return len(config.data.state_indices)
     widths = {"tcp_pose": 6, "tcp_vel": 6, "tcp_force": 3, "tcp_torque": 3, "gripper_pose": 1}
-    return sum(widths[key.split("/", 1)[-1]] for key in config.task.proprio_keys)
+    # Unknown fields (e.g. WidowX joint_0..left_carriage_joint) are 1-D, like the
+    # environment state space in robotics/environments/robot.py.
+    return sum(widths.get(key.split("/", 1)[-1], 1) for key in config.task.proprio_keys)
 
 
 def _learned_state_dim(config: RootConfig) -> int | None:

@@ -157,10 +157,16 @@ def build_sampler(
         policy_factory = policy_config.create_trained_policy
 
     train_config = train_config_builder(resolved.config)
-    if mode == "vla" and int(train_config.model.action_horizon) != resolved.config.task.action_horizon:
+    if (
+        mode == "vla"
+        and resolved.config.openpi.action_horizon is None
+        and int(train_config.model.action_horizon) != resolved.config.task.action_horizon
+    ):
         # The established direct-VLA evaluator samples only the chunk that the
         # environment will execute. ACoB keeps its training-time model horizon
-        # and selects the executed prefix after sampling.
+        # and selects the executed prefix after sampling. An explicit
+        # ``openpi.action_horizon`` (WidowX: 50, as trained) is kept as is;
+        # ``prepare_environment_actions`` then executes only the prefix.
         train_config = replace(
             train_config,
             model=replace(
