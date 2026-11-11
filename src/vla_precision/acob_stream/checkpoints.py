@@ -102,11 +102,15 @@ def prepare_fresh_run_layout(config: RootConfig, layout: CheckpointLayout) -> No
 
 
 def create_checkpoint_manager(train_config, layout: CheckpointLayout):
+    # Num treino novo, ``prepare_fresh_run_layout`` acabou de criar ``layout.actor`` vazia (depois de
+    # conferir que não havia nada). O OpenPI recusa uma pasta que já existe sem overwrite/resume, então
+    # uma pasta vazia é aberta como "retomada" (não há nada para retomar nem para apagar).
+    empty = layout.actor.is_dir() and not any(layout.actor.iterdir())
     manager, _ = openpi_checkpoints.initialize_checkpoint_dir(
         layout.actor,
         keep_period=train_config.keep_period,
         overwrite=train_config.overwrite,
-        resume=False,
+        resume=empty,
     )
     return manager
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import shutil
+import os
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -40,7 +41,9 @@ def ensure_resnet10_params(params_path: str = DEFAULT_CRITIC_RESNET10_PARAMS_PAT
         return resolved_path
 
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = resolved_path.with_suffix(resolved_path.suffix + ".download")
+    # Um arquivo temporário por processo: actor e learner sobem juntos e baixam ao mesmo tempo. Com um
+    # nome só, o primeiro a terminar renomeava o arquivo do outro, que caía com FileNotFoundError.
+    temporary_path = resolved_path.with_suffix(f"{resolved_path.suffix}.download.{os.getpid()}")
     LOGGER.info("downloading critic ResNet-10 weights to %s", resolved_path)
     try:
         with urllib.request.urlopen(RESNET10_PARAMS_URL, timeout=120) as response:

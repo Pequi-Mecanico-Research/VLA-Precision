@@ -181,7 +181,9 @@ learner:
 checkpoint:
   save_interval: 250
   keep_period: 250
-  resume: true
+  # false = treino novo, do zero (o LoRA começa zerado). true = continuar um treino já salvo em
+  # checkpoints/stage2/<experimento>/ (actor e crítico no mesmo passo). O true veio do exemplo do UR.
+  resume: false
   overwrite: false
   resume_step: 0
 

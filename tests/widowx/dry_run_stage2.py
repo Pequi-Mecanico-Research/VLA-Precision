@@ -1,4 +1,4 @@
-"""T6b — ensaio completo do Stage 2 sem robô, numa máquina só, medindo a memória da GPU.
+"""T6 — ensaio completo do Stage 2 sem robô, numa máquina só, medindo a memória da GPU.
 
 Sobe os processos de verdade do Stage 2 e troca só o hardware por simulação:
 
@@ -11,18 +11,19 @@ correções que o learner exige antes de começar a treinar (~32 chunks corrigid
 de GPU de cada processo com ``nvidia-smi``. No fim, mostra o pico de cada um e se o learner chegou
 a treinar.
 
-Pré-requisitos: o pré-processamento (T6) já rodou com o mesmo YAML de task; o checkpoint está no
+Pré-requisitos: o pré-processamento (E1) já rodou com o mesmo YAML de task; o checkpoint está no
 caminho do YAML; a máquina tem tela (o robot-agent-bridge usa o teclado via pynput).
 
     uv run --no-sync python tests/widowx/dry_run_stage2.py --minutes 15
 
-Os logs de cada processo ficam em ./results/dry_run/<data-hora>/. Detalhes: docs/widowx.md, T6b.
+Os logs de cada processo ficam em ./results/dry_run/<data-hora>/. Detalhes: docs/widowx.md, T6.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -81,9 +82,38 @@ def main() -> None:
         help="XLA_PYTHON_CLIENT_MEM_FRACTION do learner (padrão: sem pré-reserva, para medir o uso real)",
     )
     parser.add_argument("--actor-fraction", default=None, help="idem para o actor")
+    parser.add_argument(
+        "--keep-artifacts",
+        action="store_true",
+        help="não apaga, no fim, o checkpoint e os buffers do Stage 2 criados pelo ensaio",
+    )
     args = parser.parse_args()
 
     os.chdir(ROOT)
+
+    # O ensaio grava o que um treino de verdade gravaria: checkpoint do Stage 2, Replay/Correction
+    # online, cache de contexto online e o buffer inicial. Com dados de câmeras simuladas, nada disso
+    # pode sobrar para o E2 (o treino novo recusa começar com essas pastas cheias, e o buffer inicial
+    # seria reaproveitado). Por isso: recusa rodar se já existirem, e apaga no fim.
+    sys.path.insert(0, str(ROOT / "src"))
+    from vla_precision.config.loader import load_config
+    from vla_precision.data import paths as vla_paths
+
+    cfg = load_config(TASK, deployment=DEPLOYMENT).config
+    data_dir = vla_paths.experiment_data_dir(cfg)
+    artifacts = [
+        vla_paths.stage2_checkpoint_dir(cfg),
+        data_dir / "training",
+        data_dir / "initial_buffer",
+        data_dir / "initial_buffer_warmup",
+    ]
+    occupied = [path for path in artifacts if path.exists() and any(f.is_file() for f in path.rglob("*"))]
+    if occupied:
+        print("Já existem artefatos de um treino do Stage 2 (o ensaio não roda por cima deles):")
+        for path in occupied:
+            print(f"  {path}")
+        print("Se forem de um ensaio anterior, apague essas pastas e rode de novo.")
+        sys.exit(1)
     run_dir = ROOT / "results" / "dry_run" / datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     common = ["--config", TASK, "--deployment", DEPLOYMENT]
@@ -164,6 +194,11 @@ def main() -> None:
     finally:
         print("\nEncerrando os processos...")
         stop_all()
+        if not args.keep_artifacts:
+            for path in artifacts:
+                if path.exists():
+                    shutil.rmtree(path)
+                    print(f"  apagado (artefato do ensaio): {path}")
 
     learner_log = (run_dir / "learner.log").read_text(errors="replace")
     trained = "Critic warmup" in learner_log or "Learner updates" in learner_log
