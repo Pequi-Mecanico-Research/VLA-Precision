@@ -8,6 +8,7 @@ install_lerobot_import_compat()
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from flax import nnx, traverse_util
 from openpi.shared import nnx_utils
 from openpi.training import config as openpi_config
@@ -71,8 +72,19 @@ def initialize_train_state(
     params_shape = state_shape.params.to_pure_dict()
     loaded_params = train_config.weight_loader.load(params_shape)
     flat_loaded = traverse_util.flatten_dict(loaded_params)
+    flat_target = traverse_util.flatten_dict(params_shape)
+    # O checkpoint vem em float32 (12,4 GB no pi05). Os pesos congelados viram bf16 dentro do
+    # ``initialize``; converter já na CPU, para o dtype final de cada peso, evita mandar a cópia
+    # float32 inteira para a GPU (não cabe numa de 16 GB). Os pesos que treinam continuam float32.
     partial = traverse_util.unflatten_dict(
-        {key: value for key, value in flat_loaded.items() if not isinstance(value, jax.ShapeDtypeStruct)}
+        {
+            key: np.asarray(value).astype(flat_target[key].dtype) if key in flat_target else value
+            for key, value in flat_loaded.items()
+            if not isinstance(value, jax.ShapeDtypeStruct)
+        }
     )
     replicated = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
-    return jax.jit(initialize, in_shardings=replicated, out_shardings=replicated)(rng, partial)
+    # donate: os pesos carregados viram os pesos de saída, sem manter duas cópias na GPU.
+    return jax.jit(
+        initialize, in_shardings=replicated, out_shardings=replicated, donate_argnums=(1,)
+    )(rng, partial)

@@ -144,20 +144,43 @@ def initialize_inference_state(train_config, rng) -> OpenPIInferenceState:
             state.replace_by_pure_dict(partial_params)
             model = nnx.merge(graphdef, state)
         params = nnx.state(model)
+        # Só inferência: todos os pesos em bf16, como o OpenPI faz ao servir a política. O cálculo
+        # do modelo já é em bf16, então o resultado não muda; a memória cai pela metade (12,4 -> 6,2
+        # GB no pi05), o que é o que permite rodar numa GPU de 16 GB.
         params = nnx_utils.state_map(
             params,
-            train_config.freeze_filter,
-            lambda p: p.replace(p.value.astype(jnp.bfloat16)),
+            nnx.Param,
+            lambda p: p.replace(p.value.astype(jnp.bfloat16))
+            if jnp.issubdtype(p.value.dtype, jnp.floating)
+            else p,
         )
         return OpenPIInferenceState(params=params, model_def=nnx.graphdef(model))
 
     state_shape = jax.eval_shape(init, rng)
     loaded_params = train_config.weight_loader.load(state_shape.params.to_pure_dict())
+    partial = _cast_loaded_params_like(loaded_params, state_shape.params.to_pure_dict())
+    # donate: os pesos carregados viram os pesos de saída, sem manter duas cópias na GPU.
+    return jax.jit(init, donate_argnums=(1,))(rng, partial)
+
+
+def _cast_loaded_params_like(loaded_params, target_shapes):
+    """Converte, ainda na CPU, cada peso carregado para o dtype final do modelo.
+
+    O checkpoint vem em float32. Sem isto, a cópia float32 inteira iria para a GPU antes de virar
+    bf16. Pesos que o checkpoint não tem (o LoRA) ficam de fora e são inicializados no ``init``.
+    """
+    from flax import traverse_util
+
+    flat_target = traverse_util.flatten_dict(target_shapes)
     flat_loaded = traverse_util.flatten_dict(loaded_params)
-    partial = traverse_util.unflatten_dict(
-        {key: value for key, value in flat_loaded.items() if not isinstance(value, jax.ShapeDtypeStruct)}
-    )
-    return jax.jit(init)(rng, partial)
+    partial = {}
+    for key, value in flat_loaded.items():
+        if isinstance(value, jax.ShapeDtypeStruct):
+            continue
+        target = flat_target.get(key)
+        dtype = getattr(target, "dtype", None)
+        partial[key] = np.asarray(value).astype(dtype) if dtype is not None else value
+    return traverse_util.unflatten_dict(partial)
 
 
 def _prefix_lengths_from_openpi_obs(pi_obs, *, actual_count: int) -> np.ndarray:
