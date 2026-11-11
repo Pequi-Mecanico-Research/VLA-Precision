@@ -17,7 +17,7 @@ from openpi.training import data_loader as openpi_data_loader
 
 from vla_precision.config.schema import RootConfig, Stage1Config
 from vla_precision.data.indexing import materialize_lerobot_indices
-from vla_precision.data.lerobot_version import lerobot_dataset_root
+from vla_precision.data.lerobot_version import lerobot_dataset_root, lerobot_video_backend
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,7 @@ def create_torch_dataset(
     dataset = LeRobotDataset(
         data_config.repo_id,
         root=root,
+        video_backend=lerobot_video_backend(),
         delta_timestamps={
             key: [step / metadata.fps for step in range(action_horizon)]
             for key in data_config.action_sequence_keys

@@ -34,6 +34,28 @@ CONVERTIBLE_VERSION = "v2.1"
 MARKER_NAME = "vla_precision_conversion.json"
 _FINGERPRINT_FILES = ("meta/info.json", "meta/episodes.jsonl", "meta/tasks.jsonl", "meta/episodes_stats.jsonl")
 
+_VIDEO_BACKEND: str | None = None
+
+
+def lerobot_video_backend() -> str:
+    """Decodificador de vídeo para o ``LeRobotDataset``: ``torchcodec`` se ele carregar, senão ``pyav``.
+
+    O LeRobot escolhe o ``torchcodec`` sempre que o pacote está instalado, mas ele só funciona com as
+    bibliotecas do FFmpeg (4 a 7) instaladas no sistema; sem elas, a leitura do primeiro frame quebra
+    com ``Could not load libtorchcodec``. O ``pyav`` traz o próprio FFmpeg no pacote, então funciona
+    em qualquer máquina. Os dois decodificam os mesmos frames.
+    """
+    global _VIDEO_BACKEND
+    if _VIDEO_BACKEND is None:
+        try:
+            import torchcodec.decoders  # noqa: F401  (carrega as bibliotecas do FFmpeg)
+
+            _VIDEO_BACKEND = "torchcodec"
+        except Exception as error:  # RuntimeError sem FFmpeg; ImportError sem o pacote
+            LOGGER.warning("torchcodec indisponível (%s); lendo os vídeos com pyav", str(error).splitlines()[0])
+            _VIDEO_BACKEND = "pyav"
+    return _VIDEO_BACKEND
+
 
 def dataset_codebase_version(root: Path) -> str:
     """Versão do formato gravada em ``meta/info.json`` (por exemplo ``"v2.1"`` ou ``"v3.0"``)."""

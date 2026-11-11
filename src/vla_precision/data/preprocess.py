@@ -28,7 +28,7 @@ from vla_precision.acob_stream.buffers.context import ContextBuffer
 from vla_precision.config.loader import ResolvedConfig
 from vla_precision.config.schema import RootConfig
 from vla_precision.data.indexing import materialize_lerobot_indices
-from vla_precision.data.lerobot_version import lerobot_dataset_root
+from vla_precision.data.lerobot_version import lerobot_dataset_root, lerobot_video_backend
 from vla_precision.data.paths import preprocess_context_dir, preprocess_transition_dir
 from vla_precision.integrations.openpi.adapter import OpenPIObservationAdapter
 from vla_precision.integrations.openpi.configs import (
@@ -573,7 +573,9 @@ _EPISODE_WORKER_CACHE_DIR = None
 def init_episode_image_worker(repo_id: str, root: str | None, image_key_map: dict[str, str], cache_dir: str) -> None:
     global _EPISODE_WORKER_DS, _EPISODE_WORKER_IMAGE_KEY_MAP, _EPISODE_WORKER_CACHE_DIR
     LeRobotDataset, _ = _import_lerobot_dataset()
-    _EPISODE_WORKER_DS = LeRobotDataset(repo_id, root=None if root is None else Path(root))
+    _EPISODE_WORKER_DS = LeRobotDataset(
+        repo_id, root=None if root is None else Path(root), video_backend=lerobot_video_backend()
+    )
     _EPISODE_WORKER_DS._ensure_hf_dataset_loaded()
     _EPISODE_WORKER_IMAGE_KEY_MAP = image_key_map
     _EPISODE_WORKER_CACHE_DIR = Path(cache_dir)
@@ -679,7 +681,7 @@ def preprocess_train_cache_from_lerobot(
     image_key_map = dict(config.data.image_key_map)
     src_root = lerobot_dataset_root(config)  # converte uma cópia local para v3.0 se o dataset for v2.1
     src_meta = LeRobotDatasetMetadata(config.data.lerobot_repo_id, root=src_root)
-    src = LeRobotDataset(config.data.lerobot_repo_id, root=src_root)
+    src = LeRobotDataset(config.data.lerobot_repo_id, root=src_root, video_backend=lerobot_video_backend())
     data_metadata = materialize_lerobot_indices(
         src,
         config.data,

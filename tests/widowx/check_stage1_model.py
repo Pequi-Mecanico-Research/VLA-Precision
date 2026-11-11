@@ -232,7 +232,11 @@ def step_keys(params_path: str, full_cfg, acob_cfg):
 # ---------------------------------------------------------------------------------------------
 def step_dataset(dataset: str, dataset_root: str | None, cache_root: str, norm_stats: dict):
     header("[5/6] Dataset × norm stats do checkpoint")
-    from vla_precision.data.lerobot_version import dataset_codebase_version, lerobot_dataset_root
+    from vla_precision.data.lerobot_version import (
+        dataset_codebase_version,
+        lerobot_dataset_root,
+        lerobot_video_backend,
+    )
     from vla_precision.integrations.openpi.lerobot_compat import install_lerobot_import_compat
 
     install_lerobot_import_compat()
@@ -243,7 +247,7 @@ def step_dataset(dataset: str, dataset_root: str | None, cache_root: str, norm_s
         paths=SimpleNamespace(cache_root=cache_root),
     )
     root = lerobot_dataset_root(cfg)
-    ds = LeRobotDataset(dataset, root=root)
+    ds = LeRobotDataset(dataset, root=root, video_backend=lerobot_video_backend())
     version = dataset_codebase_version(root) if root is not None else "v3.0 (Hub)"
     report("5. dataset", "PASSOU", f"{dataset} aberto pelo VLA-Precision ({version}): {len(ds)} frames, raiz {root}")
 
