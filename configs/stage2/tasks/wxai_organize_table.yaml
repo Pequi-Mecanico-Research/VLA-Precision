@@ -32,13 +32,15 @@ task:
   image_keys: [base_0_rgb, left_wrist_0_rgb]
   # Estado 7D na ordem do dataset: 6 juntas (rad) + garra (m).
   proprio_keys: [joint_0, joint_1, joint_2, joint_3, joint_4, joint_5, left_carriage_joint]
-  # Passos executados por consulta à política (10 a 30 Hz = ~3 decisões/s). O modelo continua
-  # prevendo 50 (openpi.action_horizon); só os primeiros 10 são executados.
-  action_horizon: 10
+  # Passos executados por consulta à política. PROVISÓRIO (docs/widowx.md, D1): 15 a 30 Hz = uma
+  # consulta a cada 0,5 s, a convenção do OpenPI em robôs reais (π0/ALOHA: 25 a 50 Hz; DROID: 8 a
+  # 15 Hz). O modelo continua prevendo 50 (openpi.action_horizon); só os 15 primeiros são executados.
+  # Confirmar com a latência do T1: se a inferência passar de ~0,3 s, subir para 20-25.
+  action_horizon: 15
   completion_reward: 10.0
   time_reward: -0.01
-  # Em chunks: 400 x 10 passos / 30 Hz = ~133 s (os episódios do dataset têm ~100 s em média).
-  max_episode_length: 400
+  # Em chunks: 300 x 15 passos / 30 Hz = 150 s (os episódios do dataset têm ~100 s em média).
+  max_episode_length: 300
 
 # Robot: High-level robot motion, reset, and action-space behavior.
 robot:
@@ -81,7 +83,7 @@ data:
     num_episodes: all
     # PROVISÓRIO (docs/widowx.md, D6): cada linha grava ~12,5 MiB de contexto em disco.
     # overlap = 1 linha por frame (90.743 linhas, ~1,1 TiB); non_overlap = 1 a cada action_horizon
-    # frames (~9.000 linhas, ~111 GiB com horizonte 10).
+    # frames (~6.000 linhas, ~74 GiB com horizonte 15).
     chunk_mode: non_overlap
     bc_only: true
     context_batch_size: 16
@@ -100,7 +102,7 @@ openpi:
   num_workers: 2
   fsdp_devices: 1
   sample_steps: 10
-  # Baixado pela B3 (tools/widowx/check_stage1_model.py): só params/ e assets/.
+  # Baixado pela B3 (tests/widowx/check_stage1_model.py): só params/ e assets/.
   initialization_checkpoint: ./checkpoints/stage1/pi05_widowxai_organize_table_inf_b32_w16_20k
   # null: o checkpoint não tem subpasta de passo (params/ fica direto na raiz).
   initialization_checkpoint_step: null
