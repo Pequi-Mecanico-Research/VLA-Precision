@@ -4,7 +4,7 @@ Roda na máquina com GPU (a 5080), no ambiente do VLA-Precision:
 
     git submodule update --init third_party/openpi
     uv sync --frozen --group stage2
-    uv run --no-sync python tools/widowx/check_stage1_model.py
+    uv run --no-sync python tests/widowx/check_stage1_model.py
 
 Etapas (cada uma imprime PASSOU / FALHOU / ATENÇÃO):
 

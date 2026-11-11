@@ -6,7 +6,7 @@ Antes, em outro terminal, no PC ligado aos braços:
 
 Depois, neste terminal (qualquer ambiente com numpy e requests):
 
-    uv run --no-sync python tools/widowx/check_service_hardware.py
+    uv run --no-sync python tests/widowx/check_service_hardware.py
 
 Cada etapa espera o seu Enter. Os movimentos são pequenos (±0,05 rad) e lentos. Para parar tudo,
 Ctrl+C no terminal do serviço: ele leva os braços para o repouso.

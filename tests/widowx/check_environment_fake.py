@@ -6,7 +6,7 @@ RealSense viram câmeras falsas. Assim testa, de ponta a ponta, a pilha de wrapp
 as imagens esticadas, o espaço de ação e as chaves de intervenção que chegam ao actor, inclusive
 pela serialização do Pyro.
 
-    uv run --no-sync python tools/widowx/check_environment_fake.py
+    uv run --no-sync python tests/widowx/check_environment_fake.py
 
 Detalhes: docs/widowx.md, teste T2b.
 """
@@ -118,6 +118,7 @@ def main() -> None:
         handle.write(deployment)
     resolved = load_config(TASK, deployment=Path(handle.name))
     cameras = {"realsense": lambda name, device: FakeRealSense(name)}
+    H = resolved.config.task.action_horizon  # passos por chunk, lido do YAML (D1)
 
     def build(**kwargs):
         env = build_environment(
@@ -144,7 +145,7 @@ def main() -> None:
     check(intervention.completion_event is None, "sem completion_event: o sucesso continua no teclado (. .)")
 
     print("[2] espaços e observação")
-    check(env.action_space.shape == (10, 7), f"ação (10, 7) = action_horizon x 7 juntas (veio {env.action_space.shape})")
+    check(env.action_space.shape == (H, 7), f"ação ({H}, 7) = task.action_horizon x 7 juntas (veio {env.action_space.shape})")
     observation, _ = env.reset()
     check(set(observation) == {"state", "base_0_rgb", "left_wrist_0_rgb"}, f"observação: {sorted(observation)}")
     check(observation["state"].shape == (1, 7), f"estado 7D (veio {observation['state'].shape})")
@@ -164,10 +165,10 @@ def main() -> None:
 
     print("[4] chunk autônomo")
     start = observation["state"][0].astype(np.float64)
-    chunk = start + np.linspace(0.0, 0.05, 10)[:, None] * np.ones(7)
+    chunk = start + np.linspace(0.0, 0.05, H)[:, None] * np.ones(7)
     observation, reward, terminated, truncated, info = env.step(chunk)
-    check(reward.shape == (10,), "uma recompensa por passo do chunk")
-    check(info["executed_action"].shape == (10, 7), "executed_action (10, 7)")
+    check(reward.shape == (H,), "uma recompensa por passo do chunk")
+    check(info["executed_action"].shape == (H, 7), f"executed_action ({H}, 7)")
     check(np.allclose(info["executed_action"], chunk, atol=1e-5), "executou exatamente o chunk")
     check(info["pose_intervention_pressed"] is False and "intervene_action" not in info, "sem intervenção marcada")
     check(np.allclose(observation["state"][0], chunk[-1], atol=1e-5), "estado novo = último passo do chunk")
@@ -180,8 +181,8 @@ def main() -> None:
     arms.set_leader(hand)
     observation, reward, terminated, truncated, info = env.step(chunk)
     check(info["pose_intervention_pressed"] is True, "pose_intervention_pressed = True")
-    check(info["intervene_action"].shape == (10, 7), "intervene_action (10, 7), mesmo formato do chunk da política")
-    check(info["intervention_steps_executed"] == 10, "10 passos vieram do leader")
+    check(info["intervene_action"].shape == (H, 7), f"intervene_action ({H}, 7), mesmo formato do chunk da política")
+    check(info["intervention_steps_executed"] == H, f"os {H} passos vieram do leader")
     check(np.allclose(info["intervene_action"][-1], hand, atol=1e-5), "o follower foi para a pose do leader")
     requests.post(url + "intervention", json={"enabled": False})
 
@@ -192,23 +193,23 @@ def main() -> None:
     next_observation, reward, terminated, truncated, info = (b64_to_numpy(value) for value in values)
     check(np.asarray(next_observation["state"]).shape == (1, 7), "estado chega ao actor como (1, 7)")
     check(np.asarray(next_observation["base_0_rgb"]).shape == (1, 224, 224, 3), "imagem chega ao actor como (1, 224, 224, 3)")
-    check(np.asarray(info["executed_action"]).shape == (10, 7), "executed_action chega ao actor")
+    check(np.asarray(info["executed_action"]).shape == (H, 7), "executed_action chega ao actor")
     check("pose_intervention_pressed" in info, "chaves de intervenção chegam ao actor")
-    check(np.asarray(b64_to_numpy(remote.env_action_space_sample())).shape == (10, 7), "env_action_space_sample (10, 7)")
+    check(np.asarray(b64_to_numpy(remote.env_action_space_sample())).shape == (H, 7), f"env_action_space_sample ({H}, 7)")
     env.close()
 
     print("[7] avaliação sem intervenção (evaluation.allow_intervention: false)")
     env = build(teleoperation_enabled=False)
     check("LeaderArmIntervention" not in wrapper_chain(env), "sem wrapper de intervenção")
     env.reset()
-    _, _, _, _, info = env.step(np.repeat(reset_pose[None], 10, axis=0))
+    _, _, _, _, info = env.step(np.repeat(reset_pose[None], H, axis=0))
     check("intervene_action" not in info, "nenhuma correção registrada")
     env.close()
 
     print("[8] modo fake_env do próprio VLA-Precision")
     env = build_environment(resolved, fake_env=True)
     observation, _ = env.reset()
-    check(observation["state"].shape == (1, 7) and env.action_space.shape == (10, 7), "fake_env monta com estado 7D e ação (10, 7)")
+    check(observation["state"].shape == (1, 7) and env.action_space.shape == (H, 7), f"fake_env monta com estado 7D e ação ({H}, 7)")
     env.close()
 
     server.shutdown()

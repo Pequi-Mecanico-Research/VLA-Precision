@@ -4,7 +4,7 @@ Testa, de ponta a ponta e por HTTP de verdade: o serviço (robotics/servers/wido
 cliente ``WidowXRobot`` (robotics/robots/widowx.py) e o wrapper ``LeaderArmIntervention``
 (robotics/wrappers/leader_intervention.py). Precisa só de numpy, requests e gymnasium:
 
-    uv run --no-sync python tools/widowx/check_robot_side_fake.py
+    uv run --no-sync python tests/widowx/check_robot_side_fake.py
 
 Detalhes: docs/widowx.md, teste T2.
 """
