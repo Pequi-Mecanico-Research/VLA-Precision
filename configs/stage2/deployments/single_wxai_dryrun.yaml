@@ -1,0 +1,78 @@
+# ENSAIO SEM ROBÔ (docs/widowx.md, teste T6b): igual ao single_wxai.yaml, mas com câmeras simuladas,
+# tudo em uma máquina (127.0.0.1), sem janela de câmera e sem esperar Enter no reset. Use com o
+# serviço do WidowX em --fake. Não serve para treinar: serve para medir memória/tempo e testar o caminho.
+# WidowX AI: valores da máquina. Explicação: docs/widowx.md e README_WIDOWX.md.
+# Dois PCs: o da GPU (5080: actor + learner + preprocess) e o ligado ao braço (serviço do WidowX +
+# robot-agent-bridge + câmeras). Os quatro processos carregam este mesmo arquivo.
+
+# Server: GPU do Actor. Na 5080 actor e learner dividem a mesma GPU.
+actor:
+  cuda_visible_devices: "0"
+  # Ninguém marca sucesso (. .) no ensaio: os episódios terminam pelo max_episode_length.
+  completion_detection_enabled: false
+
+# Server: GPU do Learner.
+learner:
+  cuda_visible_devices: "0"
+
+# Server: GPUs do pré-processamento (Replay e Context).
+preprocess:
+  cuda_visible_devices: "0"
+
+# Server: Pasta local do dataset (null = baixa do Hugging Face).
+data:
+  lerobot_root: null
+
+# Robot: Endereço do serviço do WidowX (roda na mesma máquina do robot-agent-bridge).
+robot:
+  server_url: http://127.0.0.1:5002/
+  options:
+    # Sem Enter a cada episódio: o ensaio roda sozinho.
+    wait_for_operator: false
+
+# Robot: Câmeras RealSense, uma por slot do modelo (task.image_keys).
+cameras:
+  capture_mode: sync
+  display_image: false
+  devices:
+    # cam_high do Stage 1. ⚠️ Confirmar que é a mesma câmera que gravou observation.images.env.
+    base_0_rgb:
+      driver: fake  # câmera simulada (robotics/cameras/fake.py)
+      serial_number: "944122073060"
+      width: 640
+      height: 480
+      fps: 30
+      options:
+        # Estica para 224x224 como o cliente do Stage 1 (o dataset não tem faixas pretas).
+        resize: stretch
+    # cam_wrist do Stage 1 (observation.images.wrist).
+    left_wrist_0_rgb:
+      driver: fake  # câmera simulada (robotics/cameras/fake.py)
+      serial_number: "243322072096"
+      width: 640
+      height: 480
+      fps: 30
+      options:
+        # Estica para 224x224 como o cliente do Stage 1 (o dataset não tem faixas pretas).
+        resize: stretch
+
+# Shared: AgentLace (Actor <-> Learner) e Pyro (Actor <-> robot-agent-bridge).
+network:
+  # Actor e Learner rodam no mesmo PC (a 5080).
+  learner_host: localhost
+  trainer_port: 3335
+  data_port: 3336
+  # IP do PC ligado ao braço, visto do PC da GPU. TROCAR antes de rodar.
+  environment_host: 127.0.0.1
+  environment_bind_host: 0.0.0.0
+  environment_port: 50001
+
+# Shared: Runtime paths.
+paths:
+  train_data_root: ./train_data
+  checkpoint_root: ./checkpoints
+  # Também guarda a cópia do dataset convertida para LeRobot v3.0.
+  cache_root: ./.cache
+  output_root: ./results
+  openpi_assets_root: ./assets
+  critic_resnet10_params_path: ./assets/resnet10_params.pkl

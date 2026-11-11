@@ -28,13 +28,19 @@ def _realsense(name: str, config: CameraDeviceConfig) -> Camera:
     )
 
 
+def _fake(name: str, config: CameraDeviceConfig) -> Camera:
+    from vla_precision.robotics.cameras.fake import FakeDeviceCamera
+
+    return FakeDeviceCamera(name, width=config.width, height=config.height)
+
+
 def build_cameras(
     config: CameraConfig,
     *,
     factories: dict[str, CameraFactory] | None = None,
 ) -> OrderedDict[str, Camera]:
     """Build enabled devices; callers can inject a new driver without changing the environment."""
-    driver_factories = {"realsense": _realsense, **(factories or {})}
+    driver_factories = {"realsense": _realsense, "fake": _fake, **(factories or {})}
     cameras: OrderedDict[str, Camera] = OrderedDict()
     try:
         for name, device in config.devices.items():
