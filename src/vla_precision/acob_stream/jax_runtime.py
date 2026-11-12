@@ -61,7 +61,8 @@ class JaxActorBackend:
         import jax
         import jax.numpy as jnp
 
-        replicated = jax.device_put(jax.tree_util.tree_map(jnp.array, agent), sharding)
+        # jnp.asarray não copia arrays que já estão na GPU (jnp.array copiaria o modelo inteiro).
+        replicated = jax.device_put(jax.tree_util.tree_map(jnp.asarray, agent), sharding)
         jax.block_until_ready(replicated.state)
         return replicated
 

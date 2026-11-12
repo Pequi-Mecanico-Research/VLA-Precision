@@ -93,7 +93,10 @@ def _device_put_agent(agent, sharding):
     import jax
     import jax.numpy as jnp
 
-    return jax.device_put(jax.tree_util.tree_map(jnp.array, agent), sharding)
+    # jnp.asarray, e não jnp.array: jnp.array copia cada array que já está na GPU, o que dobrava o
+    # modelo (e separava os pesos congelados que o ator e a referência compartilham). Com 3 B de
+    # parâmetros, isso são ~6 GB a mais, e o learner não cabia numa GPU de 16 GB.
+    return jax.device_put(jax.tree_util.tree_map(jnp.asarray, agent), sharding)
 
 
 def _observation_action_spaces(cache_directory: Path, metadata: dict):
