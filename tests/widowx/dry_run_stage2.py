@@ -137,6 +137,14 @@ def main() -> None:
     def alive(name: str) -> bool:
         return processes[name].poll() is None
 
+    def log_tail(name: str, size: int = 20000) -> str:
+        path = run_dir / f"{name}.log"
+        if not path.exists():
+            return ""
+        with path.open("rb") as file:
+            file.seek(max(0, path.stat().st_size - size))
+            return file.read().decode(errors="replace")
+
     def stop_all() -> None:
         for name in ("actor", "learner", "bridge", "service"):
             proc = processes.get(name)
@@ -178,6 +186,12 @@ def main() -> None:
             dead = [name for name in processes if not alive(name)]
             if dead:
                 print(f"\nProcesso encerrou antes da hora: {', '.join(dead)}. Veja o log em {run_dir}.")
+                break
+            # Um erro na parte principal pode deixar o processo vivo (outras threads seguram ele),
+            # mas parado. Por isso também procura um Traceback no fim de cada log.
+            crashed = [name for name in ("learner", "actor") if "Traceback (most recent call last)" in log_tail(name)]
+            if crashed:
+                print(f"\nErro (Traceback) no log de: {', '.join(crashed)}. Veja o log em {run_dir}.")
                 break
             usage = gpu_memory_by_pid()
             for name, proc in processes.items():

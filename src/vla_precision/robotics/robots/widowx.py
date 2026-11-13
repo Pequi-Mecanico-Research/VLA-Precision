@@ -134,6 +134,11 @@ class WidowXRobot:
         return self.observations()
 
     def request(self, name: str, enabled: bool) -> Any:
+        if name == "force_pause":
+            # O actor pede isto no fim de cada episódio (acob_stream/actor.py), enquanto empacota o
+            # episódio para o learner. Vem do UR, que fica em modo de força e precisa ser congelado.
+            # No WidowX não há nada a fazer: sem chunk em execução, o braço já fica parado na pose.
+            return {"force_pause": bool(enabled)}
         return self._post(name, {name: bool(enabled)})
 
     def close(self) -> None:
