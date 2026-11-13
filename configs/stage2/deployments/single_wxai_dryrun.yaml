@@ -1,4 +1,4 @@
-# ENSAIO SEM ROBÔ (docs/widowx.md, teste T6b): igual ao single_wxai.yaml, mas com câmeras simuladas,
+# ENSAIO SEM ROBÔ (docs/widowx.md, teste T6): igual ao single_wxai.yaml, mas com câmeras simuladas,
 # tudo em uma máquina (127.0.0.1), sem janela de câmera e sem esperar Enter no reset. Use com o
 # serviço do WidowX em --fake. Não serve para treinar: serve para medir memória/tempo e testar o caminho.
 # WidowX AI: valores da máquina. Explicação: docs/widowx.md e README_WIDOWX.md.
@@ -76,3 +76,8 @@ paths:
   output_root: ./results
   openpi_assets_root: ./assets
   critic_resnet10_params_path: ./assets/resnet10_params.pkl
+
+# Server: o ensaio não salva checkpoint do Stage 2. O learner roda sem o PaliGemma (não usado nele), e o
+# checkpoint ainda não sabe repor esses pesos ao ser carregado (docs/widowx.md, T6 / D9).
+checkpoint:
+  save_interval: 100000000

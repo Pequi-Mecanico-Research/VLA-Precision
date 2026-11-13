@@ -155,7 +155,17 @@ def main() -> None:
     start("bridge", [python, "main.py", "--stage", "stage2", "--mode", "robot-agent-bridge", *common])
     start("learner", [python, "main.py", "--stage", "stage2", "--mode", "train", "--role", "learner", *common],
           env_for(args.learner_fraction))
-    time.sleep(20)  # o learner publica os parâmetros iniciais antes de o actor conectar
+    # O actor só sobe depois que o learner publica os pesos iniciais. Antes disso, o learner ainda tem
+    # o modelo inteiro na GPU (ele só tira o PaliGemma depois de carregar), e os dois juntos não cabem.
+    print("  esperando o learner ficar pronto (Initial Actor parameters published)...")
+    learner_log = run_dir / "learner.log"
+    deadline = time.time() + 900
+    while "Initial Actor parameters published" not in learner_log.read_text(errors="replace"):
+        if not alive("learner") or time.time() > deadline:
+            print("  o learner caiu ou não ficou pronto em 15 min; veja o learner.log")
+            stop_all()
+            sys.exit(1)
+        time.sleep(5)
     start("actor", [python, "main.py", "--stage", "stage2", "--mode", "train", "--role", "actor", *common],
           env_for(args.actor_fraction))
 

@@ -18,3 +18,4 @@ __pycache__/
 /assets/resnet10_params.pkl
 /resolved_config.yaml
 configs/sites/local*.yaml
+/learner.log
