@@ -6,6 +6,8 @@ from vla_precision.integrations.openpi.lerobot_compat import install_lerobot_imp
 
 install_lerobot_import_compat()
 
+import logging
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -24,6 +26,7 @@ def initialize_train_state(
     mesh: jax.sharding.Mesh,
     *,
     resume: bool,
+    drop_unused_paligemma: bool = False,
 ) -> training_utils.TrainState:
     """Initialize OpenPI exactly as Stage I/II training does."""
     debug_record(
@@ -76,13 +79,25 @@ def initialize_train_state(
     # O checkpoint vem em float32 (12,4 GB no pi05). Os pesos congelados viram bf16 dentro do
     # ``initialize``; converter já na CPU, para o dtype final de cada peso, evita mandar a cópia
     # float32 inteira para a GPU (não cabe numa de 16 GB). Os pesos que treinam continuam float32.
-    partial = traverse_util.unflatten_dict(
-        {
-            key: np.asarray(value).astype(flat_target[key].dtype) if key in flat_target else value
-            for key, value in flat_loaded.items()
-            if not isinstance(value, jax.ShapeDtypeStruct)
-        }
-    )
+    flat_partial = {
+        key: np.asarray(value).astype(flat_target[key].dtype) if key in flat_target else value
+        for key, value in flat_loaded.items()
+        if not isinstance(value, jax.ShapeDtypeStruct)
+    }
+    if drop_unused_paligemma:
+        # Só no learner: o PaliGemma nunca roda nele (ver learner_weights.py). Esvaziar aqui, ainda na
+        # CPU, evita que ele ocupe a GPU (o JAX não devolveria essa memória para o actor).
+        from vla_precision.integrations.openpi.learner_weights import empty_unused_paligemma
+
+        flat_partial, saved = empty_unused_paligemma(flat_partial)
+        logging.getLogger(__name__).info(
+            "learner: %.2f GB de pesos do PaliGemma não usados ficaram fora da GPU", saved / 1e9
+        )
+        if saved < 1e9:
+            logging.getLogger(__name__).warning(
+                "learner: quase nada do PaliGemma foi encontrado para esvaziar; confira os nomes dos pesos"
+            )
+    partial = traverse_util.unflatten_dict(flat_partial)
     replicated = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
     # donate: os pesos carregados viram os pesos de saída, sem manter duas cópias na GPU.
     return jax.jit(

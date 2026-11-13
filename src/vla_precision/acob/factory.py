@@ -15,6 +15,7 @@ def create_agent(
     sample_observation: Any,
     sample_action: Any,
     train_config: Any | None = None,
+    drop_unused_paligemma: bool = False,
 ) -> ACoBAgent:
     """Build Stage-II ACoB without a second config or experiment mapping."""
     if train_config is None:
@@ -49,6 +50,7 @@ def create_agent(
         debug_enabled=config.debug,
         critic_resnet10_params_path=config.paths.critic_resnet10_params_path,
         dual_arm=config.task.arm_mode == "dual",
+        drop_unused_paligemma=drop_unused_paligemma,
     )
     return agent.replace(
         algo_config={

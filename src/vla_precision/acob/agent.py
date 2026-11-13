@@ -960,6 +960,7 @@ def _create_acob_agent(
     debug_enabled: bool,
     critic_resnet10_params_path: str = DEFAULT_CRITIC_RESNET10_PARAMS_PATH,
     dual_arm: bool = False,
+    drop_unused_paligemma: bool = False,
 ):
     ablate_critic_pref, ablate_actor_bc, ablate_actor_advantage = _validate_ablation_flags(
         ablate_critic_pref=ablate_critic_pref,
@@ -992,7 +993,9 @@ def _create_acob_agent(
     rng = jax.random.PRNGKey(seed)
     rng, pi_rng, critic_rng = jax.random.split(rng, 3)
     mesh = pi_sharding.make_mesh(pi_train_config.fsdp_devices)
-    pi_state = initialize_train_state(pi_train_config, pi_rng, mesh, resume=resume_pi)
+    pi_state = initialize_train_state(
+        pi_train_config, pi_rng, mesh, resume=resume_pi, drop_unused_paligemma=drop_unused_paligemma
+    )
 
     if encoder_type == "resnet":
         from vla_precision.acob.vision import resnetv1_configs

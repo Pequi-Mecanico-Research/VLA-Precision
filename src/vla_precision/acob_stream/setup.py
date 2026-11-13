@@ -234,14 +234,12 @@ def build_learner_runtime(resolved: ResolvedConfig) -> LearnerRuntime:
         sample_observation=observation_space.sample(),
         sample_action=action_space.sample(),
         train_config=train_config,
+        # O learner só roda o action expert sobre o cache de contexto: o PaliGemma (~5,5 GB) nunca vai
+        # para a GPU dele. Ver integrations/openpi/learner_weights.py e docs/widowx.md (T6, D9).
+        drop_unused_paligemma=True,
     )
     layout = checkpoint_layout(cfg)
     agent, manager, resumed_step = prepare_agent(agent, cfg, layout)
-    # O learner só roda o action expert sobre o cache de contexto: o PaliGemma (~5,5 GB) fica parado.
-    # Ver integrations/openpi/learner_weights.py e docs/widowx.md (T6, D9).
-    from vla_precision.integrations.openpi.learner_weights import drop_unused_paligemma_weights
-
-    agent = drop_unused_paligemma_weights(agent)
     agent = _device_put_agent(agent, mesh.replicated_sharding)
 
     online_context = _online_context_store(agent, resolved)

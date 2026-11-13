@@ -6,72 +6,49 @@ e a parte ``None`` (o PaliGemma) não é executada. O ``embed_suffix`` do π0.5 
 PaliGemma. E o learner publica para o actor só os pesos treináveis (o LoRA).
 
 Então, no learner, a visão (SigLIP), a tabela de tokens e as camadas de linguagem do Gemma 2B (~5,5 GB
-em bf16) ficam parados na GPU. Esta função troca esses pesos por arrays de tamanho zero:
+em bf16) ficariam parados na GPU. Esta função troca esses pesos por arrays de tamanho zero **ainda na
+CPU**, antes de o modelo ir para a GPU. Isso importa: se eles fossem para a GPU e só depois fossem
+apagados, o JAX guardaria a memória liberada para si, e o actor (outro processo) não poderia usá-la.
 
-- nas camadas, que o ``nn.scan`` percorre, o formato vira ``(18, 0, ...)``: a 1ª dimensão (o número de
-  camadas) precisa continuar igual, senão o scan quebra;
-- no resto, ``(0, ...)``.
+- Nas camadas, que o ``nn.scan`` percorre, o formato vira ``(18, 0, ...)``: a 1ª dimensão (o número de
+  camadas) precisa continuar igual, senão o scan quebra.
+- No resto, ``(0, ...)``.
 
 Se algum ponto do learner usar um desses pesos, o Flax acusa o formato errado na hora
 (``ScopeParamShapeError``), em vez de calcular algo errado em silêncio.
 
-O actor não usa esta função: ele precisa do PaliGemma para ler as imagens.
+O actor não usa isto: ele precisa do PaliGemma para ler as imagens.
 """
 
 from __future__ import annotations
 
-import dataclasses
-import logging
+import re
 
-import jax
-import jax.numpy as jnp
-from openpi.shared import nnx_utils
-
-LOGGER = logging.getLogger(__name__)
+import numpy as np
 
 # No Gemma do OpenPI, os pesos do PaliGemma (o 1º "expert") não têm sufixo e os do action expert têm
 # "_1" (openpi/models/gemma.py, ``_name``). É a mesma convenção do filtro de congelamento.
-_NOT_ACTION_EXPERT = r"(?!.*_1(/|$))"
 # "(.*/)?" tolera um nível a mais entre llm/ e layers/ (por exemplo, a coleção "params" do Flax).
-_LLM_LAYERS = nnx_utils.PathRegex(rf".*PaliGemma/llm/(.*/)?layers/{_NOT_ACTION_EXPERT}.*")
-_LLM_OTHERS = nnx_utils.PathRegex(rf".*PaliGemma/llm/(?!(.*/)?layers/){_NOT_ACTION_EXPERT}.*")
-_VISION = nnx_utils.PathRegex(r".*PaliGemma/img/.*")
+_NOT_ACTION_EXPERT = r"(?!.*_1(/|$))"
+_LLM_LAYERS = re.compile(rf".*PaliGemma/llm/(.*/)?layers/{_NOT_ACTION_EXPERT}.*")
+_LLM_OTHERS = re.compile(rf".*PaliGemma/llm/(?!(.*/)?layers/){_NOT_ACTION_EXPERT}.*")
+_VISION = re.compile(r".*PaliGemma/img/.*")
 
 
-def _empty(keep_first_axis: bool):
-    def fn(variable):
-        value = variable.value
-        if not hasattr(value, "shape") or len(value.shape) == 0:
-            return variable
-        shape = (value.shape[0], 0, *value.shape[2:]) if keep_first_axis and len(value.shape) > 1 else (0, *value.shape[1:])
-        return variable.replace(jnp.zeros(shape, dtype=value.dtype))
-
-    return fn
-
-
-def _nbytes(state) -> int:
-    return sum(int(getattr(leaf, "nbytes", 0)) for leaf in jax.tree_util.tree_leaves(state))
-
-
-def _drop(params):
-    params = nnx_utils.state_map(params, _LLM_LAYERS, _empty(keep_first_axis=True))
-    params = nnx_utils.state_map(params, _LLM_OTHERS, _empty(keep_first_axis=False))
-    return nnx_utils.state_map(params, _VISION, _empty(keep_first_axis=False))
-
-
-def drop_unused_paligemma_weights(agent):
-    """Devolve o agente com o PaliGemma vazio no ator e na referência (que compartilham esses pesos)."""
-    pi_state = agent.state.pi_state
-    before = _nbytes(pi_state.params)
-    params = _drop(pi_state.params)
-    reference = _drop(agent.state.ref_pi_params)
-    after = _nbytes(params)
-    if before - after < 1e9:
-        LOGGER.warning("learner: quase nada do PaliGemma foi encontrado para remover; confira os nomes dos pesos")
-    LOGGER.info(
-        "learner: pesos do PaliGemma não usados removidos da GPU (%.2f GB -> %.2f GB)",
-        before / 1e9,
-        after / 1e9,
-    )
-    pi_state = dataclasses.replace(pi_state, params=params)
-    return agent.replace(state=agent.state.replace(pi_state=pi_state, ref_pi_params=reference))
+def empty_unused_paligemma(flat_params: dict) -> tuple[dict, int]:
+    """Recebe os pesos achatados ({caminho: array}) e devolve os do PaliGemma vazios + bytes poupados."""
+    result = {}
+    saved = 0
+    for key, value in flat_params.items():
+        path = "/".join(str(part) for part in key)
+        shape = getattr(value, "shape", None)
+        if shape and _LLM_LAYERS.fullmatch(path) and len(shape) > 1:
+            empty_shape = (shape[0], 0, *shape[2:])
+        elif shape and (_LLM_OTHERS.fullmatch(path) or _VISION.fullmatch(path) or _LLM_LAYERS.fullmatch(path)):
+            empty_shape = (0, *shape[1:])
+        else:
+            result[key] = value
+            continue
+        saved += int(np.prod(shape)) * np.dtype(value.dtype).itemsize
+        result[key] = np.zeros(empty_shape, dtype=value.dtype)
+    return result, saved
